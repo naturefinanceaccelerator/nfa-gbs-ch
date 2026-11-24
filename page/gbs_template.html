@@ -1,0 +1,848 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Swiss Biodiversity Score Tool · NFA</title>
+<meta name="description" content="Biodiversity footprint per parcel in Switzerland: GBS-consistent MSA (GLOBIO4 land-use module) from the Habitat Map of Switzerland. Upload a KML, get every number behind the result.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..125,400..800&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="lib/leaflet.css">
+<style>
+/* Same visual system as the NFA golf map: panel left, map right. */
+:root {
+  --paper: #f6f7f5; --land: #fbfcfa; --void: #dde3df; --ink: #17201c; --muted: #56625c; --rule: #d3dad6;
+  --accent: #227766; --deep: #0C3024; --mint: #D3E7D1; --blue: #1E4BD2; --sky: #B4D7FF; --warn: #a3302f;
+  --shadow: 0 6px 24px rgba(23, 32, 28, .16);
+  --m0: #F1EFE6; --m1: #D3E7D1; --m2: #8FC2A4; --m3: #3E8C74; --m4: #0C3024; --water: #5596FA; --nodata: #c9cfcb;
+  --f-display: "Archivo", "Helvetica Neue", Arial, sans-serif;
+  --f-body: "Archivo", "Helvetica Neue", Arial, sans-serif;
+  --f-data: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+}
+html, body { height: 100%; margin: 0; }
+body { background: var(--paper); color: var(--ink); font-family: var(--f-body); font-size: 14px; line-height: 1.45; }
+.app { display: grid; grid-template-columns: minmax(340px, 420px) 1fr; height: 100%; }
+.panel { overflow-y: auto; border-right: 1px solid var(--rule); padding: 22px 20px 18px 18px;
+  display: flex; flex-direction: column; gap: 20px; min-width: 0; }
+.mapwrap { position: relative; min-width: 0; background: var(--void); }
+#map { position: absolute; inset: 0; background: var(--void); }
+.brand-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 0 0 14px; }
+.brand { display: block; width: 116px; height: auto; }
+.author { font-size: 10.5px; line-height: 1.2; color: var(--muted); text-align: right; }
+.eyebrow { margin: 0 0 6px; font-family: var(--f-data); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+h1 { margin: 0; font-family: var(--f-display); font-weight: 780; font-size: 30px; line-height: 1.02;
+  font-variation-settings: "wdth" 118; letter-spacing: -.01em; }
+h1 .flag { display: block; height: 6px; margin-top: 12px; width: 96px; border-radius: 3px;
+  background: linear-gradient(90deg, var(--m1) 0 30%, var(--m3) 30% 70%, var(--deep) 70%); }
+.lede { margin: 12px 0 0; color: var(--muted); }
+h2 { margin: 0 0 10px; font-size: 11px; font-family: var(--f-data); font-weight: 500; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--muted); }
+.drop { display: block; border: 1.5px dashed var(--edge, #84918b); border-radius: 10px; padding: 16px; text-align: center; cursor: pointer;
+  background: var(--land); transition: background .15s; }
+.drop.over { background: var(--mint); }
+.drop b { font-weight: 640; }
+.drop small { display: block; color: var(--muted); margin-top: 4px; font-size: 12px; }
+.drop input { display: none; }
+.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.btn { font: 600 13px var(--f-body); color: var(--ink); background: var(--paper); border: 1px solid var(--rule);
+  border-radius: 6px; padding: 6px 10px; cursor: pointer; }
+.btn:hover { background: var(--land); }
+.btn.primary { color: #fff; background: var(--deep); border-color: var(--deep); }
+.btn:disabled { opacity: .5; cursor: default; }
+.link { font: inherit; color: var(--accent); background: none; border: 0; padding: 0; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+.seg { display: inline-flex; border: 1px solid var(--rule); border-radius: 7px; overflow: hidden; }
+.seg button { font: 600 12.5px var(--f-body); border: 0; background: var(--paper); color: var(--muted); padding: 6px 10px; cursor: pointer; }
+.seg button[aria-pressed="true"] { background: var(--deep); color: #fff; }
+.stats { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 18px; margin: 0; }
+.stat { min-width: 0; border-top: 1px solid var(--rule); padding-top: 8px; display: flex; flex-direction: column-reverse; justify-content: flex-end; }
+.stat dd { margin: 0; font-family: var(--f-display); font-weight: 720; font-size: 23px; font-variation-settings: "wdth" 112;
+  font-variant-numeric: tabular-nums; line-height: 1.1; }
+.stat dd small { font-family: var(--f-data); font-weight: 400; font-size: 12px; color: var(--muted); margin-left: 3px; }
+.stat dt { font-size: 12.5px; color: var(--muted); margin-top: 3px; }
+.polys { list-style: none; margin: 0; padding: 0; }
+.polys li + li { border-top: 1px solid var(--rule); }
+.ps { display: grid; grid-template-columns: 4px 1fr auto; gap: 10px; align-items: center; width: 100%; text-align: left;
+  font: inherit; color: inherit; background: none; border: 0; padding: 8px 4px; cursor: pointer; }
+.ps .bar { width: 4px; align-self: stretch; border-radius: 2px; background: var(--c, var(--m3)); }
+.ps .nm { font-weight: 560; min-width: 0; overflow-wrap: anywhere; }
+.ps .nm span { display: block; font-size: 12px; color: var(--muted); font-weight: 400; }
+.ps .num { font-family: var(--f-data); font-size: 12px; color: var(--muted); text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.ps .num b { color: var(--ink); font-weight: 500; }
+.ps[aria-current="true"] { background: color-mix(in srgb, var(--mint) 55%, transparent); border-radius: 6px; }
+.note { font-size: 12.5px; color: var(--muted); margin: 0; }
+.note + .note { margin-top: 8px; }
+.err { color: var(--warn); font-size: 13px; margin: 8px 0 0; }
+.err:empty { display: none; }
+table.t { width: 100%; border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; }
+table.t th { text-align: left; font: 500 10.5px var(--f-data); letter-spacing: .04em; text-transform: uppercase; color: var(--muted);
+  border-bottom: 1px solid var(--rule); padding: 4px 4px; vertical-align: bottom; }
+table.t td { border-bottom: 1px solid var(--rule); padding: 4px 4px; vertical-align: top; }
+table.t td.n, table.t th.n { text-align: right; font-family: var(--f-data); white-space: nowrap; }
+table.t tr.sum td { font-weight: 640; border-top: 1.5px solid var(--ink); }
+.sw { display: inline-block; width: 10px; height: 10px; border-radius: 2px; background: var(--c); margin-right: 6px; vertical-align: -1px; }
+.rules { display: grid; gap: 6px; }
+.rule { display: grid; grid-template-columns: 1fr 14px 1fr 26px; gap: 6px; align-items: center; }
+.rule select, .yr input, .rule input { font: 13px var(--f-body); color: var(--ink); background: var(--paper); border: 1px solid var(--rule);
+  border-radius: 6px; padding: 5px 6px; min-width: 0; width: 100%; }
+.yr { display: grid; grid-template-columns: auto 90px; gap: 8px; align-items: center; font-size: 13px; color: var(--muted); }
+.toggles { display: grid; gap: 0; }
+.tog { display: grid; grid-template-columns: 18px 26px 1fr; align-items: center; gap: 7px; padding: 3px 4px; border-radius: 6px; cursor: pointer; line-height: 1.3; }
+.tog:hover { background: color-mix(in srgb, var(--ink) 5%, transparent); }
+.tog input { margin: 0; accent-color: var(--accent); width: 15px; height: 15px; }
+.tog .t { font-weight: 560; } .tog .s { display: block; color: var(--muted); font-size: 12px; }
+.swb { width: 26px; height: 14px; display: block; border-radius: 2px; }
+.legend { display: flex; flex-wrap: wrap; gap: 2px 10px; padding: 2px 4px 4px 30px; font-size: 11.5px; color: var(--muted); }
+.legend span { display: inline-flex; align-items: center; gap: 5px; }
+.legend i { width: 9px; height: 9px; border-radius: 2px; background: var(--c); }
+.legend.hab { flex-direction: column; flex-wrap: nowrap; gap: 3px; max-height: 280px; overflow-y: auto; }
+.legend.hab i { flex: none; width: 12px; height: 12px; border: 1px solid rgba(0,0,0,.15); }
+.legend.hab .hd { margin-top: 4px; font-weight: 640; color: var(--ink); }
+.legend.hab b { color: var(--ink); font-weight: 600; }
+.legend.hab .src { margin-top: 4px; font-size: 11px; }
+.sources { font-size: 12px; color: var(--muted); border-top: 1px solid var(--rule); padding-top: 12px; margin-top: auto; }
+.sources p { margin: 0 0 6px; }
+a { color: var(--accent); text-underline-offset: 2px; }
+button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.busy { position: absolute; z-index: 950; left: 50%; top: 14px; transform: translateX(-50%); background: var(--paper); border: 1px solid var(--rule);
+  border-radius: 8px; padding: 6px 12px; font: 12.5px var(--f-data); box-shadow: var(--shadow); }
+.busy[hidden] { display: none; }
+.readout { position: absolute; z-index: 900; right: 10px; bottom: 10px; font: 11.5px/1.35 var(--f-data); text-align: right;
+  background: color-mix(in srgb, var(--paper) 90%, transparent); border: 1px solid var(--rule); border-radius: 6px; padding: 5px 8px; pointer-events: none; }
+.leaflet-container { font-family: var(--f-body); background: var(--void); }
+.leaflet-bar { border-radius: 6px !important; border: 1px solid var(--rule) !important; box-shadow: var(--shadow) !important; }
+.leaflet-bar a { color: var(--ink); background: var(--paper); }
+.leaflet-popup-content-wrapper { border-radius: 10px; }
+.pp h3 { margin: 0 20px 4px 0; font: 700 14px var(--f-display); }
+.pp dl { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; margin: 0; font-size: 12.5px; }
+.pp dt { color: var(--muted); } .pp dd { margin: 0; font-variant-numeric: tabular-nums; }
+
+/* ---- report (screen: overlay; print: the only thing printed) ---- */
+#report { position: fixed; inset: 0; z-index: 2000; background: #fff; overflow-y: auto; display: none; }
+#report.open { display: block; }
+.rbar { position: sticky; top: 0; display: flex; gap: 8px; justify-content: flex-end; padding: 10px 16px; background: color-mix(in srgb, #fff 92%, transparent);
+  border-bottom: 1px solid var(--rule); z-index: 1; }
+.doc { max-width: 900px; margin: 0 auto; padding: 28px 32px 60px; color: var(--ink); font-size: 13.5px; }
+.doc h1 { font-size: 28px; }
+.doc h2 { font: 700 19px var(--f-display); letter-spacing: 0; text-transform: none; color: var(--deep); margin: 30px 0 8px; break-after: avoid; }
+.doc h3 { font: 700 15px var(--f-display); margin: 18px 0 6px; color: var(--deep); break-after: avoid; }
+.doc p { margin: 6px 0; max-width: 75ch; }
+.doc .meta { color: var(--muted); font-size: 12.5px; }
+.doc table.t { font-size: 12px; margin: 8px 0 4px; }
+.doc .f { font-family: var(--f-data); font-size: 12.5px; background: var(--paper); border: 1px solid var(--rule); border-radius: 6px; padding: 8px 10px; margin: 8px 0; white-space: pre-wrap; }
+.doc .poly { break-before: page; }
+.doc .poly:first-of-type { break-before: auto; }
+.doc ul { margin: 6px 0; padding-left: 20px; } .doc li { margin: 3px 0; max-width: 75ch; }
+@media print {
+  @page { size: A4; margin: 16mm 14mm; }
+  body { background: #fff; }
+  .app, .rbar { display: none !important; }
+  #report { position: static; display: block !important; overflow: visible; }
+  .doc { padding: 0; max-width: none; }
+  table.t { break-inside: auto; } tr { break-inside: avoid; }
+}
+@media (max-width: 760px) {
+  .app { display: flex; flex-direction: column; height: auto; }
+  .mapwrap { order: -1; height: 55vh; min-height: 320px; }
+  .panel { border-right: 0; overflow: visible; }
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="panel" aria-label="Parcel tool">
+    <header>
+      <div class="brand-row">
+        <img class="brand" src="__LOGO__" alt="Nature Finance Accelerator" width="560" height="184">
+        <span class="author">Created by Dr. Matthias Häni</span>
+      </div>
+      <p class="eyebrow" id="eyebrow">Switzerland</p>
+      <h1>Swiss Biodiversity <span style="white-space:nowrap">Score Tool</span><span class="flag" aria-hidden="true"></span></h1>
+      <p class="lede">Upload parcels as KML. Get the biodiversity footprint of each polygon, with every number behind it. The measure is mean species abundance (MSA): 1 = intact nature, 0 = none left. MSA.ha = hectares of intact nature lost. Method: GLOBIO4 land-use module, consistent with the Global Biodiversity Score (GBS), on the Habitat Map of Switzerland. Your file stays in your browser: <span style="white-space:nowrap">nothing is uploaded.</span></p>
+    </header>
+
+    <section aria-labelledby="h-in">
+      <h2 id="h-in">Parcels</h2>
+      <label class="drop" id="drop">
+        <input type="file" id="file" accept=".kml,.kmz,.geojson,.json,.csv" multiple>
+        <b>Drop KML, KMZ or GeoJSON here</b>, <span style="white-space:nowrap">or click to choose</span>
+        <small>One polygon or many. Optional per polygon: target_habitat, target_from, target_year.</small>
+      </label>
+      <div class="row" style="margin-top:8px"><button class="link" id="sample" type="button">Load the sample parcel (Mellingen)</button><span class="note" id="loaded"></span></div>
+      <p class="err" id="err" role="alert"></p>
+      <p class="err" id="fwarn" role="alert"></p>
+    </section>
+
+    <section id="sec-res" hidden aria-labelledby="h-res">
+      <h2 id="h-res">Result</h2>
+      <div class="row" style="justify-content:space-between;margin-bottom:10px">
+        <div class="seg" role="group" aria-label="Variant">
+          <button type="button" data-v="central" aria-pressed="true">Central</button>
+          <button type="button" data-v="conservative" aria-pressed="false">Conservative</button>
+        </div>
+        <div class="row">
+          <button class="btn primary" id="btn-report" type="button">Report</button>
+          <button class="btn" id="btn-csv" type="button">CSV</button>
+          <button class="btn" id="btn-json" type="button">JSON</button>
+        </div>
+      </div>
+      <dl class="stats" id="stats"></dl>
+      <ul class="polys" id="polys" style="margin-top:14px"></ul>
+    </section>
+
+    <section id="sec-detail" hidden aria-labelledby="h-detail">
+      <h2 id="h-detail">Selected parcel</h2>
+      <div id="detail"></div>
+      <h2 style="margin-top:16px">Measure (target state)</h2>
+      <div class="rules" id="rules"></div>
+      <div class="row" style="margin-top:6px"><button class="btn" id="add-rule" type="button">Add a change</button>
+        <label class="yr">Target reached in <input type="number" id="tyear" min="2026" max="2100" step="1" placeholder="year"></label></div>
+      <p class="note" style="margin-top:6px">Example: Fettwiesen und -weiden (4.5) → Halbtrockenrasen (4.2.4). Gain = area × (MSA target − MSA now).</p>
+    </section>
+
+    <section aria-labelledby="h-layers">
+      <h2 id="h-layers">Map layers</h2>
+      <div class="toggles">
+        <label class="tog"><input type="checkbox" id="lay-img"><span class="swb" style="background:linear-gradient(135deg,#5f7a4a 0 30%,#9a8f73 30% 55%,#d9d6cf 55% 70%,#4d6a3f 70%)"></span>
+          <span><span class="t">Aerial imagery</span><span class="s">SWISSIMAGE, swisstopo</span></span></label>
+        <label class="tog"><input type="checkbox" id="lay-hab"><span class="swb" style="background:linear-gradient(90deg,#f5d36a 0 25%,#9fd27a 25% 50%,#3b8f4f 50% 75%,#8bb8e8 75%)"></span>
+          <span><span class="t">Habitat Map of Switzerland</span><span class="s">FOEN/WSL, official colours (WMS)</span></span></label>
+        <div class="legend hab" id="hab-legend" hidden></div>
+        <label class="tog"><input type="checkbox" id="lay-msa" checked><span class="swb" style="background:linear-gradient(90deg,var(--m0),var(--m2),var(--m4))"></span>
+          <span><span class="t">MSA per pixel</span><span class="s">The pixels behind the result, current variant</span></span></label>
+        <div class="legend" id="msa-legend"></div>
+      </div>
+    </section>
+
+    <section aria-labelledby="h-method">
+      <h2 id="h-method">Method in short</h2>
+      <p class="note">1. Each polygon is projected to Swiss LV95. 2. The Habitat Map of Switzerland gives the habitat type (TypoCH) per <span id="res-txt">2 m</span> pixel. 3. Each habitat type maps to one GLOBIO land-use class. 4. That class gives the MSA of birds &amp; mammals and of plants. MSA = mean of both. 5. Footprint = area × (1 − MSA).</p>
+      <p class="note"><b>Central</b> follows the GLOBIO4 classes. <b>Conservative</b> treats managed habitats more strictly (managed forest 0.70, sealed 0.05, mown semi-natural grassland as extensive use). The truth for a site lies in this range. Field monitoring proves it.</p>
+      <p class="note">Land use only. Roads, fragmentation, nitrogen, climate are not included. Open water is outside the terrestrial MSA. Not the official GBS of CDC Biodiversité.</p>
+      <p class="note"><button class="link" id="btn-method" type="button">Full method, tables, validation</button> · <a id="repo" href="#" target="_blank" rel="noopener">code on GitHub</a></p>
+    </section>
+
+    <footer class="sources">
+      <p>Sources: <a href="https://www.doi.org/10.16904/envidat.723" target="_blank" rel="noopener">Habitat Map of Switzerland v1.2</a> (FOEN/WSL) · <a href="https://www.globio.info/" target="_blank" rel="noopener">GLOBIO4</a> (PBL) · <a href="https://www.swisstopo.admin.ch" target="_blank" rel="noopener">swisstopo</a></p>
+      <p>Source: FOEN/WSL · © swisstopo · NFA Foundation · <a href="mailto:matthias.haeni@nfa.ch">matthias.haeni@nfa.ch</a></p>
+    </footer>
+  </aside>
+
+  <main class="mapwrap">
+    <div id="map" aria-label="Map of the parcels"></div>
+    <div class="busy" id="busy" hidden></div>
+    <div class="readout" id="readout"></div>
+  </main>
+</div>
+
+<div id="report" aria-label="Report">
+  <div class="rbar"><button class="btn primary" id="r-print" type="button">Print or save as PDF</button><button class="btn" id="r-close" type="button">Close</button></div>
+  <div class="doc" id="doc"></div>
+</div>
+
+<script src="lib/leaflet.js"></script>
+<script src="lib/proj4.js"></script>
+<script>const D = /*DATA*/;</script>
+<script>
+(function () {
+  "use strict";
+  // ================================================================ helpers
+  const $ = id => document.getElementById(id);
+  const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const nf = (x, d = 2) => x == null || !isFinite(x) ? "–" : Number(x).toLocaleString("de-CH", { minimumFractionDigits: d, maximumFractionDigits: d });
+  const LV95 = D.lv95;
+  const toLV = proj4("EPSG:4326", LV95);
+  const REF = D.ref, COEF = REF.coef, MAP = REF.mapping, NAMES = REF.names || {};
+  const META = D.meta, RES = META.res, TILE = META.tile_m, NPX = Math.round(TILE / RES);
+  const YEAR = new Date().getFullYear();
+  const VARS = ["central", "conservative"];
+  let variant = "central";
+
+  function dotted(code) {
+    let s = String(code).trim();
+    if (/^STR/i.test(s) || /^\d+$/.test(s)) s = s.replace(/\D/g, "").split("").join(".");
+    return s.replace(/(\.[xX])+$/, "");
+  }
+  function matchRow(code) {
+    const parts = dotted(code).split(".");
+    let best = null;
+    for (const row of MAP) {
+      const rp = row.t.split(".");
+      if (rp.every((v, i) => parts[i] === v) && (!best || rp.length > best.t.split(".").length)) best = row;
+    }
+    return best;
+  }
+  function hname(code) {
+    const d = dotted(code);
+    if (NAMES[d]) return NAMES[d];
+    const row = matchRow(d);
+    if (row && row.t === d) return row.name;
+    return row ? row.name : `TypoCH ${d}`;
+  }
+
+  // ================================================================ reading files
+  function coords(text) {
+    const out = [];
+    for (const tok of (text || "").trim().split(/\s+/)) {
+      const v = tok.split(",");
+      if (v.length >= 2 && v[0] !== "") out.push([parseFloat(v[0]), parseFloat(v[1])]);
+    }
+    return out;
+  }
+  function readKML(text) {
+    const doc = new DOMParser().parseFromString(text, "application/xml");
+    if (doc.getElementsByTagName("parsererror").length) throw new Error("The KML file could not be read.");
+    const feats = [];
+    for (const pm of doc.getElementsByTagNameNS("*", "Placemark")) {
+      const nameEl = pm.getElementsByTagNameNS("*", "name")[0];
+      const props = {};
+      for (const d of pm.getElementsByTagNameNS("*", "Data")) {
+        const v = d.getElementsByTagNameNS("*", "value")[0];
+        props[d.getAttribute("name") || ""] = v ? v.textContent.trim() : "";
+      }
+      for (const d of pm.getElementsByTagNameNS("*", "SimpleData")) props[d.getAttribute("name") || ""] = d.textContent.trim();
+      const polys = [];
+      for (const pg of pm.getElementsByTagNameNS("*", "Polygon")) {
+        const rings = [];
+        for (const b of pg.children) {
+          const ln = b.localName;
+          if (ln !== "outerBoundaryIs" && ln !== "innerBoundaryIs") continue;
+          for (const c of b.getElementsByTagNameNS("*", "coordinates")) {
+            const r = coords(c.textContent);
+            if (r.length >= 3) ln === "outerBoundaryIs" ? rings.unshift(r) : rings.push(r);
+          }
+        }
+        if (rings.length) polys.push(rings);
+      }
+      if (polys.length) feats.push({ name: nameEl ? nameEl.textContent.trim() : "", props, polysWgs: polys });
+    }
+    return feats;
+  }
+  function readGeoJSON(text) {
+    const gj = JSON.parse(text);
+    const items = gj.type === "FeatureCollection" ? gj.features : [gj];
+    const feats = [];
+    items.forEach((f, i) => {
+      const g = f.geometry || {}, props = {};
+      for (const [k, v] of Object.entries(f.properties || {})) props[k] = v == null ? "" : String(v);
+      let polys = [];
+      if (g.type === "Polygon") polys = [g.coordinates.map(r => r.map(p => [p[0], p[1]]))];
+      if (g.type === "MultiPolygon") polys = g.coordinates.map(pl => pl.map(r => r.map(p => [p[0], p[1]])));
+      if (polys.length) feats.push({ name: props.name || props.Name || props.NAME || `Polygon ${i + 1}`, props, polysWgs: polys });
+    });
+    return feats;
+  }
+  async function unzipKML(buf) {
+    // minimal ZIP reader: central directory, then the first .kml entry (stored or deflated)
+    const dv = new DataView(buf), u8 = new Uint8Array(buf);
+    let eocd = -1;
+    for (let i = buf.byteLength - 22; i >= Math.max(0, buf.byteLength - 66000); i--) if (dv.getUint32(i, true) === 0x06054b50) { eocd = i; break; }
+    if (eocd < 0) throw new Error("The KMZ file could not be read.");
+    let p = dv.getUint32(eocd + 16, true);
+    const n = dv.getUint16(eocd + 10, true);
+    for (let k = 0; k < n; k++) {
+      const method = dv.getUint16(p + 10, true), csize = dv.getUint32(p + 20, true);
+      const fl = dv.getUint16(p + 28, true), xl = dv.getUint16(p + 30, true), cl = dv.getUint16(p + 32, true);
+      const off = dv.getUint32(p + 42, true);
+      const name = new TextDecoder().decode(u8.subarray(p + 46, p + 46 + fl));
+      p += 46 + fl + xl + cl;
+      if (!/\.kml$/i.test(name)) continue;
+      const lfl = dv.getUint16(off + 26, true), lxl = dv.getUint16(off + 28, true);
+      const data = u8.subarray(off + 30 + lfl + lxl, off + 30 + lfl + lxl + csize);
+      if (method === 0) return new TextDecoder().decode(data);
+      const out = await new Response(new Blob([data]).stream().pipeThrough(new DecompressionStream("deflate-raw"))).arrayBuffer();
+      return new TextDecoder().decode(out);
+    }
+    throw new Error("No KML inside the KMZ file.");
+  }
+  function readCSV(text) {
+    const lines = text.replace(/\r/g, "").split("\n").filter(Boolean);
+    const sep = (lines[0].match(/;/g) || []).length > (lines[0].match(/,/g) || []).length ? ";" : ",";
+    const head = lines[0].split(sep).map(s => s.trim().replace(/^"|"$/g, ""));
+    return lines.slice(1).map(l => { const v = l.split(sep).map(s => s.trim().replace(/^"|"$/g, "")); const o = {}; head.forEach((h, i) => o[h] = v[i] ?? ""); return o; });
+  }
+  async function readFiles(files) {
+    let feats = [];
+    const csvs = [];
+    for (const f of files) {
+      const ext = f.name.split(".").pop().toLowerCase();
+      if (ext === "kml") feats = feats.concat(readKML(await f.text()));
+      else if (ext === "kmz") feats = feats.concat(readKML(await unzipKML(await f.arrayBuffer())));
+      else if (ext === "geojson" || ext === "json") feats = feats.concat(readGeoJSON(await f.text()));
+      else if (ext === "csv") csvs.push(...readCSV(await f.text()));
+      else throw new Error(`${f.name}: only KML, KMZ, GeoJSON (plus an optional CSV)`);
+    }
+    const byName = Object.fromEntries(csvs.map(r => [String(r.name || "").trim(), r]));
+    feats.forEach((f, i) => {
+      f.name = f.name || `Polygon ${i + 1}`;
+      for (const [k, v] of Object.entries(byName[f.name] || {})) if (k !== "name" && v) f.props[k] = v;
+      f.polys = f.polysWgs.map(poly => poly.map(ring => ring.map(([lon, lat]) => toLV.forward([lon, lat]))));
+    });
+    return feats;
+  }
+
+  // ================================================================ geometry
+  const ringArea = r => { let s = 0; for (let i = 0; i < r.length; i++) { const j = (i + 1) % r.length; s += r[i][0] * r[j][1] - r[i][1] * r[j][0]; } return Math.abs(s) / 2; };
+  const geomArea = polys => polys.reduce((a, p) => a + ringArea(p[0]) - p.slice(1).reduce((b, h) => b + ringArea(h), 0), 0);
+  async function geomHash(polys) {
+    const s = polys.map(p => p.map(r => r.map(([x, y]) => `${x.toFixed(2)} ${y.toFixed(2)}`).join(",")).join("|")).join(";");
+    const h = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s));
+    return [...new Uint8Array(h)].map(b => b.toString(16).padStart(2, "0")).join("");
+  }
+
+  // ================================================================ tiles
+  const tileCache = new Map();
+  function tile(te, tn) {
+    const k = te + "_" + tn;
+    if (!tileCache.has(k)) {
+      tileCache.set(k, fetch(`tiles/${te / 1000}/${tn / 1000}.bin`).then(async r => {
+        if (!r.ok) return null;
+        const buf = await new Response(r.body.pipeThrough(new DecompressionStream("deflate"))).arrayBuffer();
+        return META.dtype === "uint16" ? new Uint16Array(buf) : new Uint8Array(buf);
+      }).catch(() => null));
+    }
+    return tileCache.get(k);
+  }
+
+  // Pixel-centre rule, even-odd over all rings. Same arithmetic as pixel_counts() in gbs_core.py.
+  async function countPixels(polys) {
+    const E = [];
+    for (const p of polys) for (const r of p) for (let i = 0; i < r.length; i++) {
+      const a = r[i], b = r[(i + 1) % r.length];
+      if (a[1] !== b[1]) E.push([a[0], a[1], b[0], b[1]]);
+    }
+    let xmin = Infinity, ymin = Infinity, xmax = -Infinity, ymax = -Infinity;
+    for (const e of E) { xmin = Math.min(xmin, e[0], e[2]); xmax = Math.max(xmax, e[0], e[2]); ymin = Math.min(ymin, e[1], e[3]); ymax = Math.max(ymax, e[1], e[3]); }
+    const tiles = [];
+    for (let te = Math.floor(xmin / TILE) * TILE; te <= Math.floor(xmax / TILE) * TILE; te += TILE)
+      for (let tn = Math.floor(ymin / TILE) * TILE; tn <= Math.floor(ymax / TILE) * TILE; tn += TILE) tiles.push([te, tn]);
+    const arrs = await Promise.all(tiles.map(([te, tn]) => tile(te, tn)));
+    const counts = new Map(), runs = [];
+    tiles.forEach(([te, tn], ti) => {
+      const arr = arrs[ti], top = tn + TILE;
+      const r0 = Math.max(0, Math.ceil((top - ymax) / RES - 0.5)), r1 = Math.min(NPX - 1, Math.floor((top - ymin) / RES - 0.5));
+      for (let row = r0; row <= r1; row++) {
+        const yc = top - (row + 0.5) * RES;
+        const xs = [];
+        for (const e of E) if ((e[1] <= yc && yc < e[3]) || (e[3] <= yc && yc < e[1])) xs.push(e[0] + (yc - e[1]) * (e[2] - e[0]) / (e[3] - e[1]));
+        if (!xs.length) continue;
+        xs.sort((a, b) => a - b);
+        for (let k = 0; k + 1 < xs.length; k += 2) {
+          const c0 = Math.max(0, Math.ceil((xs[k] - te) / RES - 0.5)), c1 = Math.min(NPX - 1, Math.ceil((xs[k + 1] - te) / RES - 0.5) - 1);
+          if (c1 < c0) continue;
+          if (!arr) { counts.set(0, (counts.get(0) || 0) + c1 - c0 + 1); runs.push([te, top, row, c0, c1, null]); continue; }
+          const base = row * NPX;
+          for (let c = c0; c <= c1; c++) { const v = arr[base + c]; counts.set(v, (counts.get(v) || 0) + 1); }
+          runs.push([te, top, row, c0, c1, arr.subarray(base + c0, base + c1 + 1)]);
+        }
+      }
+    });
+    return { counts, runs };
+  }
+
+  // ================================================================ MSA (mirror of gbs_core.assess)
+  function ruleTarget(code, rules) {
+    const parts = code.split(".");
+    for (const r of rules) { if (r.from === "*" || r.from.split(".").every((v, i) => parts[i] === v)) return r.to; }
+    return null;
+  }
+  function assess(f) {
+    const A = f.area, counts = f.counts;
+    let nAll = 0; for (const n of counts.values()) nAll += n;
+    const scale = nAll ? A / (nAll * RES * RES) : 0;
+    const rules = f.rules.filter(r => r.to);
+    const pieces = []; let water = 0, nodata = 0;
+    for (const [idx, n] of [...counts.entries()].sort((a, b) => a[0] - b[0])) {
+      const ha = n * RES * RES * scale / 1e4;
+      if (idx === 0) { nodata += ha; continue; }
+      const code = dotted(META.codes[idx]), row = matchRow(code);
+      const p = { typoch: code, name: hname(code), pixels: n, area_ha: ha, row: row.t, terrestrial: row.terr };
+      if (!row.terr) water += ha;
+      for (const [v, key] of [["central", "c"], ["conservative", "k"]]) { const g = COEF[row[key]]; p[v] = { globio: row[key], globio_name: g.name, wb: g.wb, pl: g.pl, msa: g.msa }; }
+      const tgt = rules.length ? ruleTarget(code, rules) : null;
+      if (tgt && row.terr) {
+        const trow = matchRow(tgt);
+        p.target = { typoch: tgt, name: hname(tgt), row: trow.t };
+        for (const [v, key] of [["central", "c"], ["conservative", "k"]]) { const g = COEF[trow[key]]; p.target[v] = { globio: trow[key], msa: g.msa, wb: g.wb, pl: g.pl }; }
+      }
+      pieces.push(p);
+    }
+    const terr = pieces.filter(p => p.terrestrial), T = terr.reduce((a, p) => a + p.area_ha, 0);
+    const out = { name: f.name, area_ha: A / 1e4, terrestrial_ha: T, water_ha: water, nodata_ha: nodata, pixels: nAll,
+      pixel_area_m2: RES * RES, scale, geom_sha256: f.hash, pieces, rules: rules.map(r => ({ from: r.from, to: r.to })), target_year: f.year || "" };
+    for (const v of VARS) {
+      const fp = terr.reduce((a, p) => a + p.area_ha * (1 - p[v].msa), 0), ok = terr.reduce((a, p) => a + p.area_ha * p[v].msa, 0);
+      const r = { msa: T ? ok / T : null, msa_wb: T ? terr.reduce((a, p) => a + p.area_ha * p[v].wb, 0) / T : null,
+        msa_pl: T ? terr.reduce((a, p) => a + p.area_ha * p[v].pl, 0) / T : null, footprint_msa_ha: fp, intact_msa_ha: ok };
+      if (rules.length) {
+        const gain = terr.reduce((a, p) => a + p.area_ha * ((p.target ? p.target[v].msa : p[v].msa) - p[v].msa), 0);
+        const y = parseInt(f.year, 10), years = isFinite(y) ? (y > 1900 ? y - YEAR : y) : null;
+        Object.assign(r, { gain_msa_ha: gain, msa_target: T ? (ok + gain) / T : null, years, gain_msa_ha_per_year: years && years > 0 ? gain / years : null });
+      }
+      out[v] = r;
+    }
+    return out;
+  }
+
+  // ================================================================ map
+  const map = L.map("map", { zoomSnap: 0.25, zoomDelta: 0.5, attributionControl: false, zoomControl: false, minZoom: 7, maxZoom: 20, preferCanvas: true })
+    .setView([46.8, 8.2], 8);
+  L.control.zoom({ position: "topright" }).addTo(map);
+  L.control.scale({ imperial: false, position: "bottomleft" }).addTo(map);
+  const wmts = id => `https://wmts.geo.admin.ch/1.0.0/${id}/default/current/3857/{z}/{x}/{y}.jpeg`;
+  const grey = L.tileLayer(wmts("ch.swisstopo.pixelkarte-grau"), { maxZoom: 20, maxNativeZoom: 18 }).addTo(map);
+  const img = L.tileLayer(wmts("ch.swisstopo.swissimage"), { maxZoom: 20, maxNativeZoom: 19 });
+  const hab = L.tileLayer.wms("https://wms.geo.admin.ch/", { layers: "ch.bafu.lebensraumkarte-schweiz", format: "image/png", transparent: true, opacity: 0.75, maxZoom: 20 });
+  const polyLayer = L.featureGroup().addTo(map);
+  const msaLayer = L.featureGroup().addTo(map);
+  const canvas = L.canvas({ padding: 0.3 });
+  $("lay-img").onchange = e => e.target.checked ? (img.addTo(map), grey.remove()) : (grey.addTo(map), img.remove());
+  $("lay-hab").onchange = e => { e.target.checked ? hab.addTo(map) : hab.remove(); show($("hab-legend"), e.target.checked); renderHabLegend(); };
+  $("lay-msa").onchange = e => e.target.checked ? msaLayer.addTo(map) : msaLayer.remove();
+  map.on("mousemove", e => {
+    const [E, N] = toLV.forward([e.latlng.lng, e.latlng.lat]);
+    $("readout").textContent = `LV95 ${Math.round(E).toLocaleString("de-CH")} / ${Math.round(N).toLocaleString("de-CH")}`;
+  });
+  const BINS = [[0, 0.2, "--m0"], [0.2, 0.4, "--m1"], [0.4, 0.6, "--m2"], [0.6, 0.8, "--m3"], [0.8, 1.0001, "--m4"]];
+  const cssv = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  $("msa-legend").innerHTML = BINS.map(([a, b, c]) => `<span style="--c:var(${c})"><i></i>${nf(a, 1)}–${nf(Math.min(b, 1), 1)}</span>`).join("") +
+    `<span style="--c:var(--water)"><i></i>water</span><span style="--c:var(--nodata)"><i></i>no data</span>`;
+  // Habitat Map legend: official FOEN/WSL group colours (symbology v1.2), groups in the loaded parcels first
+  const HLEG = D.hab_legend || [];
+  const legIdx = new Map();
+  HLEG.forEach((g, i) => g[2].forEach(v => legIdx.set(String(v).toLowerCase(), i)));
+  const legGroup = code => {
+    let c = String(code).toLowerCase();
+    while (c) { if (legIdx.has(c)) return legIdx.get(c); const j = c.lastIndexOf("."); if (j < 0) break; c = c.slice(0, j); }
+    return -1;
+  };
+  function renderHabLegend() {
+    const el = $("hab-legend");
+    const link = `<a href="https://api3.geo.admin.ch/rest/services/api/MapServer/ch.bafu.lebensraumkarte-schweiz/legend?lang=en" target="_blank" rel="noopener">full legend on map.geo.admin.ch</a>`;
+    if (!HLEG.length) { el.innerHTML = `<span>${link}</span>`; return; }
+    const here = new Set();
+    for (const f of feats) if (f.res) for (const p of f.res.pieces) { const g = legGroup(p.typoch); if (g >= 0) here.add(g); }
+    const order = HLEG.map((_, i) => i).sort((a, b) => (here.has(b) - here.has(a)) || a - b);
+    el.innerHTML = (here.size ? `<span class="hd">In your parcels</span>` : "") +
+      order.map((i, k) => (here.size && k === here.size ? `<span class="hd">Other habitat groups</span>` : "") +
+        `<span style="--c:${HLEG[i][1]}"><i></i>${here.has(i) ? `<b>${esc(HLEG[i][0])}</b>` : esc(HLEG[i][0])}</span>`).join("") +
+      `<span class="src">Colours: FOEN/WSL symbology v1.2 · ${link}</span>`;
+  }
+  const colorCache = new Map();
+  const msaColor = (idx) => {
+    const key = variant + idx;
+    if (!colorCache.has(key)) colorCache.set(key, msaColorRaw(idx));
+    return colorCache.get(key);
+  };
+  const msaColorRaw = (idx) => {
+    if (!idx) return cssv("--nodata");
+    const row = matchRow(META.codes[idx]);
+    if (!row.terr) return cssv("--water");
+    const m = COEF[row[variant === "central" ? "c" : "k"]].msa;
+    return cssv(BINS.find(([a, b]) => m >= a && m < b)[2]);
+  };
+  function drawPixels(f) {
+    msaLayer.clearLayers();
+    if (!f || !f.runs) return;
+    if (f.pixels > 400000) { $("readout").textContent = "Parcel too large to draw every pixel - numbers are complete."; return; }
+    const inv = toLV.inverse, byColor = new Map();
+    for (const [te, top, row, c0, c1, vals] of f.runs) {
+      const y1 = top - row * RES, y0 = y1 - RES;
+      let s = c0;
+      for (let c = c0; c <= c1; c++) {
+        const v = vals ? vals[c - c0] : 0, nv = c < c1 ? (vals ? vals[c - c0 + 1] : 0) : -1;
+        if (c < c1 && msaColor(nv) === msaColor(v)) continue;
+        const x0 = te + s * RES, x1 = te + (c + 1) * RES;
+        const ring = [[x0, y0], [x1, y0], [x1, y1], [x0, y1]].map(p => { const [lon, lat] = inv(p); return [lat, lon]; });
+        const col = msaColor(v);
+        if (!byColor.has(col)) byColor.set(col, []);
+        byColor.get(col).push(ring);
+        s = c + 1;
+      }
+    }
+    for (const [col, rings] of byColor) L.polygon(rings, { renderer: canvas, stroke: false, fillColor: col, fillOpacity: 0.85, interactive: false }).addTo(msaLayer);
+    polyLayer.bringToFront();
+  }
+
+  // ================================================================ state + UI
+  let feats = [], sel = -1;
+  const show = (el, on) => { el.hidden = !on; };
+  const busy = t => { $("busy").textContent = t || ""; show($("busy"), !!t); };
+
+  const res0 = META.res;
+  $("res-txt").textContent = `${nf(res0, res0 % 1 ? 1 : 0)} m`;
+  $("eyebrow").textContent = `Switzerland · ${META.dataset.replace("HabitatMap_", "Habitat Map ").replace(/_/g, ".").replace(/\.(\d{8})$/, " ($1)")} · ${nf(res0, res0 % 1 ? 1 : 0)} m`;
+  $("repo").href = D.repo;
+
+  async function load(files) {
+    $("err").textContent = "";
+    try {
+      busy("Reading the file …");
+      const fs = await readFiles(files);
+      if (!fs.length) throw new Error("No polygons found in the file.");
+      busy(`Counting habitat pixels for ${fs.length} polygon${fs.length > 1 ? "s" : ""} …`);
+      for (const f of fs) {
+        f.area = geomArea(f.polys);
+        f.hash = await geomHash(f.polys);
+        const { counts, runs } = await countPixels(f.polys);
+        f.counts = counts; f.runs = runs; f.pixels = [...counts.values()].reduce((a, b) => a + b, 0);
+        const to = (f.props.target_habitat || f.props.target || "").trim();
+        const from = (f.props.target_from || "").split(/[;,]/).map(s => s.trim()).filter(Boolean);
+        f.rules = to ? (from.length ? from : ["*"]).map(x => ({ from: x === "*" ? "*" : dotted(x), to: dotted(to) })) : [];
+        f.year = f.props.target_year || f.props.years || "";
+        f.res = assess(f);
+      }
+      feats = fs;
+      $("loaded").textContent = `${feats.length} polygon${feats.length > 1 ? "s" : ""} loaded`;
+      drawPolys();
+      renderAll();
+      select(0, true);
+    } catch (e) {
+      console.error(e);
+      $("err").textContent = e.message || String(e);
+    } finally { busy(""); }
+  }
+
+  function drawPolys() {
+    polyLayer.clearLayers();
+    feats.forEach((f, i) => {
+      for (const poly of f.polysWgs) {
+        L.polygon(poly.map(r => r.map(([x, y]) => [y, x])), { color: cssv("--deep"), weight: 2, fill: true, fillOpacity: 0 })
+          .on("click", () => select(i)).addTo(polyLayer);
+      }
+    });
+    if (feats.length) map.fitBounds(polyLayer.getBounds(), { padding: [30, 30], maxZoom: 17 });
+  }
+
+  function renderAll() {
+    show($("sec-res"), feats.length > 0);
+    renderHabLegend();
+    const R = feats.map(f => f.res), v = variant;
+    const sum = k => R.reduce((a, r) => a + (r[v][k] || 0), 0);
+    const T = R.reduce((a, r) => a + r.terrestrial_ha, 0), A = R.reduce((a, r) => a + r.area_ha, 0);
+    const msa = T ? R.reduce((a, r) => a + (r[v].msa || 0) * r.terrestrial_ha, 0) / T : null;
+    const anyGain = R.some(r => r.rules.length);
+    $("stats").innerHTML = [
+      [nf(A, 2), "ha", `Area of ${feats.length} polygon${feats.length > 1 ? "s" : ""}`],
+      [nf(msa, 3), "", `MSA now, ${v}`],
+      [nf(sum("footprint_msa_ha"), 2), "MSA.ha", `Footprint = ${nf(sum("footprint_msa_ha") / 100, 4)} MSA.km²`],
+      anyGain ? [(sum("gain_msa_ha") >= 0 ? "+" : "") + nf(sum("gain_msa_ha"), 2), "MSA.ha", "Gain of the measures"] : ["–", "", "Gain: add a measure below"],
+    ].map(([val, u, t]) => `<div class="stat"><dt>${esc(t)}</dt><dd>${val}${u ? `<small>${u}</small>` : ""}</dd></div>`).join("");
+    $("polys").innerHTML = feats.map((f, i) => {
+      const r = f.res[v];
+      return `<li><button class="ps" type="button" data-i="${i}" aria-current="${i === sel}" style="--c:${cssv(BINS.find(([a, b]) => (r.msa ?? 0) >= a && (r.msa ?? 0) < b)[2])}">
+        <span class="bar"></span><span class="nm">${esc(f.name)}<span>${nf(f.res.area_ha, 2)} ha${f.res.nodata_ha > 0.005 ? ` · ${nf(f.res.nodata_ha, 2)} ha outside the map` : ""}</span></span>
+        <span class="num">MSA <b>${nf(r.msa, 3)}</b><br>${nf(r.footprint_msa_ha, 2)} MSA.ha</span></button></li>`;
+    }).join("");
+    for (const b of $("polys").querySelectorAll(".ps")) b.onclick = () => select(+b.dataset.i);
+    if (sel >= 0) renderDetail();
+  }
+
+  function select(i, keepView) {
+    sel = i;
+    show($("sec-detail"), true);
+    renderAll();
+    drawPixels(feats[i]);
+    if (!keepView || feats.length === 1) {
+      const b = L.featureGroup(feats[i].polysWgs.map(p => L.polygon(p.map(r => r.map(([x, y]) => [y, x]))))).getBounds();
+      map.fitBounds(b, { padding: [40, 40], maxZoom: 18 });
+    }
+  }
+
+  const TARGETS = (() => {
+    // every terrestrial TypoCH code known to the tool: mapping rows, official names, codes in the map
+    const set = new Set(MAP.filter(m => m.terr).map(m => m.t));
+    for (const k of Object.keys(NAMES)) set.add(k);
+    for (const c of META.codes.slice(1)) set.add(dotted(c));
+    const key = s => s.split(".").map(x => x.padStart(4, "0")).join(".");
+    return [...set].filter(c => { const r = matchRow(c); return r && r.terr; }).sort((a, b) => key(a) < key(b) ? -1 : 1);
+  })();
+
+  function renderDetail() {
+    const f = feats[sel], r = f.res, v = variant, c = r[v];
+    const rows = [...r.pieces].sort((a, b) => b.area_ha - a.area_ha);
+    $("detail").innerHTML = `<p style="margin:0 0 6px;font-weight:640">${esc(f.name)}</p>
+      <table class="t"><thead><tr><th>Habitat (TypoCH)</th><th class="n">ha</th><th class="n">MSA</th><th class="n">MSA.ha lost</th></tr></thead><tbody>
+      ${rows.map(p => `<tr><td><span class="sw" style="--c:${p.terrestrial ? cssv(BINS.find(([a, b]) => p[v].msa >= a && p[v].msa < b)[2]) : cssv("--water")}"></span>${esc(p.name)} <span class="note">${esc(p.typoch)}</span></td>
+        <td class="n">${nf(p.area_ha, 3)}</td><td class="n">${p.terrestrial ? nf(p[v].msa, 3) : "water"}</td><td class="n">${p.terrestrial ? nf(p.area_ha * (1 - p[v].msa), 3) : "–"}</td></tr>`).join("")}
+      ${r.nodata_ha > 0.0005 ? `<tr><td><span class="sw" style="--c:${cssv("--nodata")}"></span>Outside the Habitat Map</td><td class="n">${nf(r.nodata_ha, 3)}</td><td class="n">–</td><td class="n">–</td></tr>` : ""}
+      <tr class="sum"><td>Terrestrial total</td><td class="n">${nf(r.terrestrial_ha, 3)}</td><td class="n">${nf(c.msa, 3)}</td><td class="n">${nf(c.footprint_msa_ha, 3)}</td></tr></tbody></table>
+      <p class="note" style="margin-top:6px">MSA birds &amp; mammals ${nf(c.msa_wb, 3)} · plants ${nf(c.msa_pl, 3)} · overall = mean ${nf(c.msa, 3)}.
+      ${r.rules.length ? `<br><b style="color:var(--ink)">Measure: MSA ${nf(c.msa, 3)} → ${nf(c.msa_target, 3)}, gain ${nf(c.gain_msa_ha, 3)} MSA.ha${c.gain_msa_ha_per_year != null ? `, ${nf(c.gain_msa_ha_per_year, 3)} per year over ${c.years} years` : ""}.</b>` : ""}</p>`;
+    const present = [...new Set(r.pieces.filter(p => p.terrestrial).map(p => p.typoch))];
+    const fromOpts = sel => `<option value="*"${sel === "*" ? " selected" : ""}>Whole parcel</option>` +
+      [...new Set([...present, ...present.map(p => p.split(".").slice(0, 2).join("."))])].sort().map(c => `<option value="${c}"${sel === c ? " selected" : ""}>${esc(c)} ${esc(hname(c))}</option>`).join("");
+    const toOpts = sel => `<option value="">– target habitat –</option>` + TARGETS.map(c => `<option value="${c}"${sel === c ? " selected" : ""}>${esc(c)} ${esc(hname(c))}</option>`).join("");
+    if (!f.rules.length) f.rules = [{ from: "*", to: "" }];
+    $("rules").innerHTML = f.rules.map((ru, i) => `<div class="rule" data-i="${i}"><select aria-label="From">${fromOpts(ru.from)}</select><span>→</span>
+      <select aria-label="To">${toOpts(ru.to)}</select><button class="btn" type="button" aria-label="Remove" title="Remove">×</button></div>`).join("");
+    $("tyear").value = f.year || "";
+    for (const el of $("rules").querySelectorAll(".rule")) {
+      const i = +el.dataset.i, [s1, s2] = el.querySelectorAll("select");
+      s1.onchange = () => { f.rules[i].from = s1.value; recompute(); };
+      s2.onchange = () => { f.rules[i].to = s2.value; recompute(); };
+      el.querySelector("button").onclick = () => { f.rules.splice(i, 1); recompute(); };
+    }
+  }
+  function recompute() { const f = feats[sel]; f.res = assess(f); renderAll(); }
+  $("add-rule").onclick = () => { feats[sel].rules.push({ from: "*", to: "" }); renderDetail(); };
+  $("tyear").onchange = e => { feats[sel].year = e.target.value; recompute(); };
+  for (const b of document.querySelectorAll(".seg button")) b.onclick = () => {
+    variant = b.dataset.v;
+    for (const x of document.querySelectorAll(".seg button")) x.setAttribute("aria-pressed", x === b);
+    renderAll(); drawPixels(feats[sel]);
+  };
+
+  // ================================================================ files in
+  const drop = $("drop");
+  $("file").onchange = e => e.target.files.length && load([...e.target.files]);
+  drop.addEventListener("dragover", e => { e.preventDefault(); drop.classList.add("over"); });
+  drop.addEventListener("dragleave", () => drop.classList.remove("over"));
+  drop.addEventListener("drop", e => { e.preventDefault(); drop.classList.remove("over"); load([...e.dataTransfer.files]); });
+  $("sample").onclick = async () => {
+    const t = D.sample_kml || await (await fetch(D.sample)).text();
+    load([new File([t], D.sample.split("/").pop(), { type: "application/vnd.google-earth.kml+xml" })]);
+  };
+  show($("sample"), !!D.sample);
+  if (location.protocol === "file:") $("fwarn").textContent = "Opened as a file: the habitat data cannot load here. Double-click start_local.bat in this folder, or use the GitHub page.";
+
+  // ================================================================ downloads
+  const download = (name, text, type) => {
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([text], { type })); a.download = name; a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  };
+  const stamp = () => new Date().toISOString().slice(2, 10).replace(/-/g, "");
+  const q = s => `"${String(s).replace(/"/g, '""')}"`;
+  const n4 = x => x == null ? "" : Number(x).toFixed(4);
+  $("btn-csv").onclick = () => {
+    const head = ["name", "area_ha", "terrestrial_ha", "water_ha", "nodata_ha", "msa_central", "msa_wb_central", "msa_plants_central",
+      "footprint_msa_ha_central", "msa_conservative", "footprint_msa_ha_conservative", "target", "target_year",
+      "gain_msa_ha_central", "gain_msa_ha_conservative", "gain_per_year_central", "geom_sha256"];
+    const lines = [head.join(",")];
+    for (const f of feats) { const r = f.res, c = r.central, k = r.conservative;
+      lines.push([q(r.name), n4(r.area_ha), n4(r.terrestrial_ha), n4(r.water_ha), n4(r.nodata_ha), n4(c.msa), n4(c.msa_wb), n4(c.msa_pl),
+        n4(c.footprint_msa_ha), n4(k.msa), n4(k.footprint_msa_ha), q(r.rules.map(x => `${x.from}>${x.to}`).join("; ")), q(r.target_year),
+        n4(c.gain_msa_ha), n4(k.gain_msa_ha), n4(c.gain_msa_ha_per_year), r.geom_sha256].join(",")); }
+    lines.push("", "polygon,typoch,habitat,mapping_row,area_ha,pixels,terrestrial,globio_central,msa_wb_central,msa_plants_central,msa_central,globio_conservative,msa_conservative,footprint_msa_ha_central,target_typoch,msa_target_central");
+    for (const f of feats) for (const p of f.res.pieces) { const c = p.central, k = p.conservative, t = p.target;
+      lines.push([q(f.name), p.typoch, q(p.name), p.row, p.area_ha.toFixed(5), p.pixels, +p.terrestrial, c.globio, c.wb ?? "", c.pl ?? "", n4(c.msa), k.globio, n4(k.msa),
+        p.terrestrial ? (p.area_ha * (1 - c.msa)).toFixed(5) : "", t ? t.typoch : "", t ? n4(t.central.msa) : ""].join(",")); }
+    download(`${stamp()}_msa_parcels.csv`, "﻿" + lines.join("\r\n"), "text/csv");
+  };
+  $("btn-json").onclick = () => download(`${stamp()}_msa_parcels.json`, JSON.stringify({
+    tool: D.version, label: D.label, made: new Date().toISOString(), habitat_map: META.dataset, res_m: RES, validation: D.validation,
+    results: feats.map(f => f.res) }, null, 1), "application/json");
+
+  // ================================================================ report
+  function tableHTML(head, rows, right = []) {
+    return `<table class="t"><thead><tr>${head.map((h, i) => `<th${right.includes(i) ? ' class="n"' : ""}>${h}</th>`).join("")}</tr></thead><tbody>${rows.map(r =>
+      `<tr${r.cls ? ` class="${r.cls}"` : ""}>${(r.cells || r).map((c, i) => `<td${right.includes(i) ? ' class="n"' : ""}>${c}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
+  }
+  function methodHTML() {
+    const V = D.validation;
+    const coefRows = Object.entries(COEF).map(([k, g]) => [esc(k), esc(g.name), g.wb == null ? "–" : nf(g.wb, 3), g.pl == null ? "–" : nf(g.pl, 3), g.msa == null ? "not terrestrial" : nf(g.msa, 4), esc(g.model), esc(g.src)]);
+    const mapRows = MAP.map(m => [esc(m.t), esc(m.name), m.terr ? `${esc(m.c)} · ${nf(COEF[m.c].msa, 3)}` : "water", m.terr ? `${esc(m.k)} · ${nf(COEF[m.k].msa, 3)}` : "–", esc(m.wc), esc(m.wk)]);
+    // national baseline from the tiles
+    let T = 0, sc = 0, sk = 0, W = 0;
+    META.codes.forEach((cd, i) => { if (!i) return; const km2 = META.pixels[i] * RES * RES / 1e6, row = matchRow(cd); if (!row.terr) { W += km2; return; } T += km2; sc += km2 * COEF[row.c].msa; sk += km2 * COEF[row.k].msa; });
+    return `<h2 id="method">Method</h2>
+      <p>The tool answers one question per polygon: how much of its original biodiversity, measured as mean species abundance (MSA), does the land use leave? MSA is 1 for an intact ecosystem and 0 when none of its original species remain. Results are labelled <b>${esc(D.label)}</b>. They follow the land-use module of GLOBIO4, the model behind the Global Biodiversity Score (GBS). They are not the official GBS of CDC Biodiversité, which uses an adapted GLOBIO 3.6.</p>
+      <h3>Steps</h3>
+      <ol><li>The polygon is read from the file (WGS84) and projected to Swiss LV95 (EPSG:2056) with proj4 (<code>${esc(LV95)}</code>). Areas are planar LV95 areas.</li>
+      <li>The Habitat Map of Switzerland (${esc(META.dataset)}, FOEN/WSL, ground cover layer) gives the TypoCH habitat type. It is stored as ${nf(RES, RES % 1 ? 1 : 0)} m pixels in ${TILE / 1000} km tiles. A pixel counts when its centre lies inside the polygon (even-odd rule, holes excluded).</li>
+      <li>Habitat shares come from the pixels. The area of each habitat is the exact polygon area times its share. Pixels outside the map count as "no data".</li>
+      <li>Each TypoCH code takes the GLOBIO class of the longest matching code in the mapping table (for example 4.5.1 uses the row 4.5).</li>
+      <li>The GLOBIO class gives the MSA of birds &amp; mammals and of plants. MSA overall is the mean of both, as in the GLOBIO4 code (CalcLanduseMSA: <code>(wbvert + plants) / 2</code>).</li>
+      <li>Open water (TypoCH 1, 1.1, 1.2) is reported but left out of the terrestrial MSA. GLOBIO treats freshwater in a separate module.</li></ol>
+      <h3>Formulas</h3>
+      <div class="f">MSA polygon      = Σ (area_i × MSA_i) / Σ area_i             (terrestrial habitats i)
+Footprint MSA.ha = Σ area_i × (1 − MSA_i)                       1 MSA.ha = 1 ha fully degraded
+Intact MSA.ha    = Σ area_i × MSA_i
+Gain MSA.ha      = Σ area_i × (MSA_i,target − MSA_i)            only habitats a measure changes
+Gain per year    = Gain / (target year − ${YEAR})                    linear path
+1 MSA.km² = 100 MSA.ha</div>
+      <h3>Two variants</h3>
+      <p><b>Central</b> uses the GLOBIO4 class that fits the plant community. <b>Conservative</b> is stricter where people manage the habitat: managed near-natural forest at 0.70 (GLOBIO 3.5, selective logging), sealed surfaces at 0.05 (GLOBIO 3.5, dense urban), mown semi-natural grassland and fens as extensive rangeland, arable land as intensive cropland. Both are always reported. A claim should hold under the conservative variant.</p>
+      <h3>Switzerland as a whole (all tiles of this tool)</h3>
+      <p>${nf(T, 0)} km² terrestrial, ${nf(W, 0)} km² open water. Area-weighted MSA: ${nf(T ? sc / T : null, 3)} central, ${nf(T ? sk / T : null, 3)} conservative. Use it as the national reference for a parcel.</p>
+      <h3>Validation</h3>
+      ${V ? `<p>Tiles versus an exact intersection with the original Habitat Map polygons (${esc(V.date)}, ${V.n} test parcels, script 3_gbs_check.py). Difference in MSA units:</p>
+      ${tableHTML(["Test parcels", "n", "Mean |difference|", "Largest |difference|"], Object.entries(V.by_kind).map(([k, x]) => [esc(k), x.n, nf(x.mean_abs, 4), nf(x.max_abs, 4)]), [1, 2, 3])}` : "<p>Run 3_gbs_check.py to add the validation.</p>"}
+      <h3>Not included</h3>
+      <ul><li>Road and rail disturbance, fragmentation of natural patches (GLOBIO infrastructure modules). Planned as phase 2.</li>
+      <li>Nitrogen deposition, climate change, hunting: constant or not relevant at parcel scale.</li>
+      <li>Single trees and shrubs outside forest (a separate layer of the Habitat Map).</li>
+      <li>Habitat quality within a type. MSA is modelled from the habitat type, not measured. Field monitoring proves the change.</li>
+      <li>MSA is relative to the natural reference state. It compares poorly across ecosystem types.</li></ul>
+      <h3>GLOBIO coefficients</h3>
+      ${tableHTML(["Class", "Name", "Birds & mammals", "Plants", "Overall", "Model", "Source"], coefRows, [2, 3, 4])}
+      <h3>Mapping TypoCH → GLOBIO</h3>
+      ${tableHTML(["TypoCH", "Habitat", "Central", "Conservative", "Why central", "Why conservative"], mapRows)}
+      <h3>Sources</h3>
+      <ul><li>PBL (2023): Technical documentation of the GLOBIOweb datasets, Table 3.1. <a href="https://www.globio.info/wp-content/uploads/2023/03/GlobioWeb_technical_documentation_20230219.pdf">globio.info</a></li>
+      <li>GLOBIO4 model code: <a href="https://github.com/GLOBIO4/GlobioModelPublic">github.com/GLOBIO4/GlobioModelPublic</a></li>
+      <li>Schipper A. M. et al. (2020): Projecting terrestrial biodiversity intactness with GLOBIO 4. Global Change Biology 26: 760–771. <a href="https://doi.org/10.1111/gcb.14848">doi:10.1111/gcb.14848</a></li>
+      <li>PBL (2016): The GLOBIO model. A technical description of version 3.5, Table 2.2. <a href="https://pbl.nl/downloads/pbl-publication-2369pdf">pbl.nl</a></li>
+      <li>Price B. et al. (2025): The Habitat Map of Switzerland v1_2 2025. EnviDat. <a href="https://www.doi.org/10.16904/envidat.723">doi:10.16904/envidat.723</a>. Source: FOEN/WSL.</li>
+      <li>Delarze R., Gonseth Y., Eggenberg S., Vust M. (2015): Lebensräume der Schweiz. 3rd edition, hep, Bern.</li>
+      <li>Code, tables, validation: <a href="${esc(D.repo)}">${esc(D.repo)}</a> · tool version ${esc(D.version)} · tiles made ${esc(META.made)}</li></ul>`;
+  }
+  function reportHTML(methodOnly) {
+    const now = new Date().toLocaleDateString("de-CH");
+    let h = `<h1>${methodOnly ? "Swiss Biodiversity Score Tool: method" : "Biodiversity score report (MSA)"}</h1>
+      <p class="meta">${esc(D.label)} · ${esc(META.dataset)} · ${nf(RES, RES % 1 ? 1 : 0)} m · NFA Foundation · ${now} · tool version ${esc(D.version)}</p>`;
+    if (!methodOnly) {
+      const R = feats.map(f => f.res);
+      h += `<h2>Summary</h2><p>MSA (mean species abundance) is 1 for an intact ecosystem and 0 for one without its original species. The footprint is the area-equivalent loss: 1 MSA.ha is one hectare fully degraded. Central uses the GLOBIO4 classes. Conservative uses a stricter class where people manage the habitat.</p>` +
+        tableHTML(["Polygon", "Area ha", "MSA central", "MSA cons.", "Footprint MSA.ha central", "Footprint MSA.ha cons.", "Gain MSA.ha central", "Gain MSA.ha cons."],
+          R.map(r => [esc(r.name), nf(r.area_ha, 2), nf(r.central.msa, 3), nf(r.conservative.msa, 3), nf(r.central.footprint_msa_ha, 2), nf(r.conservative.footprint_msa_ha, 2),
+            r.rules.length ? nf(r.central.gain_msa_ha, 2) : "–", r.rules.length ? nf(r.conservative.gain_msa_ha, 2) : "–"]).concat(R.length > 1 ? [{ cls: "sum", cells: ["Total",
+            nf(R.reduce((a, r) => a + r.area_ha, 0), 2), "", "", nf(R.reduce((a, r) => a + r.central.footprint_msa_ha, 0), 2), nf(R.reduce((a, r) => a + r.conservative.footprint_msa_ha, 0), 2),
+            nf(R.reduce((a, r) => a + (r.central.gain_msa_ha || 0), 0), 2), nf(R.reduce((a, r) => a + (r.conservative.gain_msa_ha || 0), 0), 2)] }] : []), [1, 2, 3, 4, 5, 6, 7]);
+      for (const r of R) {
+        const c = r.central, k = r.conservative;
+        h += `<section class="poly"><h2>${esc(r.name)}</h2>
+          <p>Area ${nf(r.area_ha, 3)} ha: terrestrial ${nf(r.terrestrial_ha, 3)} ha, open water ${nf(r.water_ha, 3)} ha, outside the Habitat Map ${nf(r.nodata_ha, 3)} ha.
+          ${r.pixels.toLocaleString("de-CH")} pixels of ${nf(r.pixel_area_m2, 0)} m² counted; area correction factor ${r.scale.toFixed(4)} (polygon area / pixel area).</p>
+          <p class="meta">Geometry SHA-256 (LV95, 1 cm): <code>${r.geom_sha256}</code></p>` +
+          tableHTML(["", "Central", "Conservative"], [
+            ["MSA birds & mammals", nf(c.msa_wb, 3), nf(k.msa_wb, 3)], ["MSA plants", nf(c.msa_pl, 3), nf(k.msa_pl, 3)],
+            ["MSA overall = mean of both", nf(c.msa, 3), nf(k.msa, 3)],
+            ["Footprint MSA.ha = Σ area × (1 − MSA)", nf(c.footprint_msa_ha, 3), nf(k.footprint_msa_ha, 3)],
+            ["Footprint MSA.km²", nf(c.footprint_msa_ha / 100, 5), nf(k.footprint_msa_ha / 100, 5)],
+            ["Intact-equivalent MSA.ha = Σ area × MSA", nf(c.intact_msa_ha, 3), nf(k.intact_msa_ha, 3)]].concat(r.rules.length ? [
+            ["MSA after the measure", nf(c.msa_target, 3), nf(k.msa_target, 3)],
+            ["Gain MSA.ha = Σ area × (MSA target − MSA now)", nf(c.gain_msa_ha, 3), nf(k.gain_msa_ha, 3)],
+            [`Gain per year${c.years ? ` (${c.years} years, linear)` : ""}`, nf(c.gain_msa_ha_per_year, 3), nf(k.gain_msa_ha_per_year, 3)]] : []), [1, 2]) +
+          (r.rules.length ? `<p><b>Measure:</b> ${r.rules.map(x => `${x.from === "*" ? "whole parcel" : "TypoCH " + esc(x.from) + " " + esc(hname(x.from))} → TypoCH ${esc(x.to)} ${esc(hname(x.to))}`).join("; ")}${r.target_year ? `, reached ${esc(r.target_year)}` : ""}.</p>` : "") +
+          `<h3>Every number behind the result</h3>` +
+          tableHTML(["TypoCH", "Habitat", "Mapping row", "Pixels", "ha", "GLOBIO central", "B&M", "Plants", "MSA", "MSA.ha lost", "Conservative", "MSA cons.", "Target"],
+            [...r.pieces].sort((a, b) => b.area_ha - a.area_ha).map(p => [esc(p.typoch), esc(p.name), esc(p.row), p.pixels.toLocaleString("de-CH"), nf(p.area_ha, 4),
+              p.terrestrial ? `${esc(p.central.globio)} ${esc(p.central.globio_name)}` : "open water", p.terrestrial ? nf(p.central.wb, 3) : "–", p.terrestrial ? nf(p.central.pl, 3) : "–",
+              p.terrestrial ? nf(p.central.msa, 4) : "–", p.terrestrial ? nf(p.area_ha * (1 - p.central.msa), 4) : "–", p.terrestrial ? esc(p.conservative.globio) : "–",
+              p.terrestrial ? nf(p.conservative.msa, 4) : "–", p.target ? `${esc(p.target.typoch)} · ${nf(p.target.central.msa, 3)}` : ""])
+              .concat([{ cls: "sum", cells: ["", "Terrestrial total", "", "", nf(r.terrestrial_ha, 4), "", nf(c.msa_wb, 3), nf(c.msa_pl, 3), nf(c.msa, 4), nf(c.footprint_msa_ha, 4), "", nf(k.msa, 4), ""] }]),
+            [3, 4, 6, 7, 8, 9, 11]) + `</section>`;
+      }
+    }
+    return h + methodHTML();
+  }
+  function openReport(methodOnly) {
+    $("doc").innerHTML = reportHTML(methodOnly);
+    $("report").classList.add("open");
+    $("report").scrollTop = 0;
+    if (methodOnly) $("method").scrollIntoView();
+  }
+  $("btn-report").onclick = () => openReport(false);
+  $("btn-method").onclick = () => openReport(true);
+  $("r-close").onclick = () => $("report").classList.remove("open");
+  $("r-print").onclick = () => window.print();
+  addEventListener("keydown", e => { if (e.key === "Escape") $("report").classList.remove("open"); });
+
+  // test hook: the validation script compares these numbers with the Python engine
+  window.GBS = { load, feats: () => feats, assess };
+})();
+</script>
+</body>
+</html>

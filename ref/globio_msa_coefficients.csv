@@ -1,0 +1,23 @@
+globio_code,globio_class,msa_birds_mammals,msa_plants,msa_overall,model,source,note
+1,Urban-settlement,0.264,0.361,0.3125,GLOBIO4,"GlobioWeb technical documentation (PBL 2023), Table 3.1; Schipper et al. 2020",
+10,Cropland,0.452,0.156,0.304,GLOBIO4,"GlobioWeb technical documentation (PBL 2023), Table 3.1; Kok et al. 2022",overall agriculture
+11,"Cropland, intensive use",0.401,0.149,0.275,GLOBIO4,"GlobioWeb technical documentation (PBL 2023), Table 3.1; Kok et al. 2022",
+12,"Cropland, minimal use",0.502,0.162,0.332,GLOBIO4,"GlobioWeb technical documentation (PBL 2023), Table 3.1; Kok et al. 2022",
+13,"Mosaic cropland (>50%) / natural vegetation",0.671,0.493,0.582,GLOBIO4,"GlobioWeb technical documentation (PBL 2023), Table 3.1",60% cropland plus 40% natural
+14,"Mosaic natural vegetation (>50%) / cropland",0.781,0.662,0.7215,GLOBIO4,"GlobioWeb technical documentation (PBL 2023), Table 3.1",40% cropland plus 60% natural
+20,Grazing,0.452,0.156,0.304,GLOBIO4,"GlobioWeb technical documentation (PBL 2023), Table 3.1; Kok et al. 2022",
+21,Intensive pastures,0.401,0.149,0.275,GLOBIO4,"GlobioWeb technical documentation (PBL 2023), Table 3.1; Kok et al. 2022",
+22,Extensive rangelands,0.502,0.162,0.332,GLOBIO4,"GlobioWeb technical documentation (PBL 2023), Table 3.1; Kok et al. 2022",
+30,Forestry,0.589,0.259,0.424,GLOBIO4,"GlobioWeb technical documentation (PBL 2023), Table 3.1; Schipper et al. 2020",plantation-type forestry
+40,Secondary vegetation,0.621,0.568,0.5945,GLOBIO4,"GlobioWeb technical documentation (PBL 2023), Table 3.1; Schipper et al. 2020",
+90,"Tree cover, natural (classes 50-90)",1,1,1,GLOBIO4,"GlobioWeb technical documentation (PBL 2023), Table 3.1: natural classes 50-220 = 1",
+120,Shrubland,1,1,1,GLOBIO4,"GlobioWeb technical documentation (PBL 2023), Table 3.1: natural classes 50-220 = 1",
+130,Natural grassland,1,1,1,GLOBIO4,"GlobioWeb technical documentation (PBL 2023), Table 3.1: natural classes 50-220 = 1",
+160,"Tree cover, flooded",1,1,1,GLOBIO4,"GlobioWeb technical documentation (PBL 2023), Table 3.1: natural classes 50-220 = 1",
+180,"Shrub or herbaceous cover, flooded",1,1,1,GLOBIO4,"GlobioWeb technical documentation (PBL 2023), Table 3.1: natural classes 50-220 = 1",
+201,Consolidated bare areas,1,1,1,GLOBIO4,"GlobioWeb technical documentation (PBL 2023), Table 3.1: natural classes 50-220 = 1",
+202,Unconsolidated bare areas,1,1,1,GLOBIO4,"GlobioWeb technical documentation (PBL 2023), Table 3.1: natural classes 50-220 = 1",
+210,Water bodies,,,,GLOBIO4,"GLOBIO4 terrestrial MSA excludes water (aquatic module separate)",not part of the terrestrial area
+220,Permanent snow and ice,1,1,1,GLOBIO4,"GlobioWeb technical documentation (PBL 2023), Table 3.1: natural classes 50-220 = 1",
+G35_URB,"Urban, dense, no green space (GLOBIO 3.5)",0.05,0.05,0.05,GLOBIO 3.5,"PBL (2016) The GLOBIO model, technical description of version 3.5, Table 2.2",conservative variant only: sealed surfaces
+G35_SEL,"Forest, selective logging (GLOBIO 3.5)",0.7,0.7,0.7,GLOBIO 3.5,"PBL (2016) The GLOBIO model, technical description of version 3.5, Table 2.2",conservative variant only: managed near-natural forest
