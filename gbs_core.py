@@ -76,11 +76,30 @@ def load_reference(ref_dir=REF, names_csv=None):
         mapping.append({"t": r["typoch"], "name": r["name_de"], "terr": r["terrestrial"] == "1",
                         "c": r["globio_central"], "k": r["globio_conservative"],
                         "wc": r["why_central"], "wk": r["why_conservative"]})
-    names = {}
+    # official German names (FOEN/WSL lookup table) without the leading code, English first where known
+    de = {}
     if names_csv and Path(names_csv).exists():
         for r in read_csv(names_csv):
-            names[r["typoch"]] = r["name_de"]
+            de.setdefault(r["typoch"], strip_code(r["name_de"]))       # first entry wins (1.1 before 1.1.X)
+    en = {}
+    en_csv = Path(ref_dir) / "typoch_names_en.csv"
+    if en_csv.exists():
+        for r in read_csv(en_csv):
+            en.setdefault(dotted(r["typoch"]), r["name_en"].strip())
+    for row in mapping:
+        de.setdefault(row["t"], strip_code(row["name"]))
+    names = {}
+    for code in set(de) | set(en):
+        g, e = de.get(code), en.get(code)
+        names[code] = f"{e} ({g})" if e and g and e != g else (e or g)
+    for row in mapping:
+        row["name"] = names.get(row["t"], row["name"])
     return {"coef": coef, "mapping": mapping, "names": names}
+
+
+def strip_code(name):
+    """'8.1.5 Niederstammobstgarten' -> 'Niederstammobstgarten' (the lookup table repeats the code in the name)."""
+    return re.sub(r"^(STR)?[\dX.]+[a-c]?\s+", "", str(name).strip(), flags=re.I)
 
 
 def dotted(code):
@@ -396,8 +415,12 @@ def assess(feat, tiles, ref, rules=None, year_now=None):
 
 
 def fmt(x, d=2):
-    """Swiss number format with apostrophe thousands, period decimals."""
+    """Swiss number format with apostrophe thousands, period decimals. At most two decimals for display;
+    tiny non-zero values as '<0.01'. CSV/JSON outputs keep full precision."""
     if x is None:
         return "–"
+    d = min(d, 2)
+    if d == 2 and x != 0 and abs(x) < 0.005:
+        return "<0.01" if x > 0 else ">-0.01"
     s = f"{x:,.{d}f}".replace(",", "’")
     return s

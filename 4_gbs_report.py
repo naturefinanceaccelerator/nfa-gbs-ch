@@ -180,7 +180,7 @@ def word(path, results, meta, ref, src_name, validation):
     if validation:
         vk = validation["by_kind"]
         doc.add_paragraph("Validation against an exact polygon overlay (3_gbs_check.py, " + validation["date"] + "): " +
-                          "; ".join(f"{k}: mean difference {v['mean_abs']:.4f}, largest {v['max_abs']:.4f} MSA (n={v['n']})"
+                          "; ".join(f"{k}: mean difference {core.fmt(v['mean_abs'])}, largest {core.fmt(v['max_abs'])} MSA (n={v['n']})"
                                     for k, v in vk.items()) + ".")
     doc.add_heading("Not included", level=2)
     for t in ["Road and rail disturbance, fragmentation (GLOBIO infrastructure modules) - phase 2.",
@@ -288,8 +288,8 @@ def main(tdir=None, inp=None, outp=None):
         map_html(out / "map.html", feats, results)
         print(f"  {f.name}: {len(results)} polygon(s) -> {out}")
         for r in results:
-            print(f"     {r['name']}: {r['area_ha']:.2f} ha, MSA {r['central']['msa']:.3f} "
-                  f"(conservative {r['conservative']['msa']:.3f}), footprint {r['central']['footprint_msa_ha']:.2f} MSA.ha")
+            print(f"     {r['name']}: {r['area_ha']:.2f} ha, MSA {r['central']['msa']:.2f} "
+                  f"(conservative {r['conservative']['msa']:.2f}), footprint {r['central']['footprint_msa_ha']:.2f} MSA.ha")
     if sys.platform == "win32" and __name__ == "__main__":
         import os
         os.startfile(out)  # noqa: S606

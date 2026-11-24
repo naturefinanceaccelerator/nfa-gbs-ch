@@ -60,6 +60,8 @@ h2 { margin: 0 0 10px; font-size: 11px; font-family: var(--f-data); font-weight:
   font-variant-numeric: tabular-nums; line-height: 1.1; }
 .stat dd small { font-family: var(--f-data); font-weight: 400; font-size: 12px; color: var(--muted); margin-left: 3px; }
 .stat dt { font-size: 12.5px; color: var(--muted); margin-top: 3px; }
+.stat.wide { grid-column: 1 / -1; }
+.t td .cv { display: block; color: var(--muted); }
 .polys { list-style: none; margin: 0; padding: 0; }
 .polys li + li { border-top: 1px solid var(--rule); }
 .ps { display: grid; grid-template-columns: 4px 1fr auto; gap: 10px; align-items: center; width: 100%; text-align: left;
@@ -158,7 +160,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
       </div>
       <p class="eyebrow" id="eyebrow">Switzerland</p>
       <h1>Swiss Biodiversity <span style="white-space:nowrap">Score Tool</span><span class="flag" aria-hidden="true"></span></h1>
-      <p class="lede">Upload parcels as KML. Get the biodiversity footprint of each polygon, with every number behind it. The measure is mean species abundance (MSA): 1 = intact nature, 0 = none left. MSA.ha = hectares of intact nature lost. Method: GLOBIO4 land-use module, consistent with the Global Biodiversity Score (GBS), on the Habitat Map of Switzerland. Your file stays in your browser: <span style="white-space:nowrap">nothing is uploaded.</span></p>
+      <p class="lede">Upload parcels as KML. Get the biodiversity footprint of each polygon, with every number behind it. The measure is <b>mean species abundance (MSA)</b>: 1 = intact nature, 0 = none left. Footprint in MSA.ha = hectares of intact nature lost. Method: GLOBIO4 land-use module, consistent with the Global Biodiversity Score (GBS), on the Habitat Map of Switzerland.</p>
     </header>
 
     <section aria-labelledby="h-in">
@@ -176,10 +178,10 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
     <section id="sec-res" hidden aria-labelledby="h-res">
       <h2 id="h-res">Result</h2>
       <div class="row" style="justify-content:space-between;margin-bottom:10px">
-        <div class="seg" role="group" aria-label="Variant">
+        <div class="row" style="gap:8px"><span class="note">Map colours</span><div class="seg" role="group" aria-label="Variant shown on the map">
           <button type="button" data-v="central" aria-pressed="true">Central</button>
           <button type="button" data-v="conservative" aria-pressed="false">Conservative</button>
-        </div>
+        </div></div>
         <div class="row">
           <button class="btn primary" id="btn-report" type="button">Report</button>
           <button class="btn" id="btn-csv" type="button">CSV</button>
@@ -218,6 +220,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
       <h2 id="h-method">Method in short</h2>
       <p class="note">1. Each polygon is projected to Swiss LV95. 2. The Habitat Map of Switzerland gives the habitat type (TypoCH) per <span id="res-txt">2 m</span> pixel. 3. Each habitat type maps to one GLOBIO land-use class. 4. That class gives the MSA of birds &amp; mammals and of plants. MSA = mean of both. 5. Footprint = area × (1 − MSA).</p>
       <p class="note"><b>Central</b> follows the GLOBIO4 classes. <b>Conservative</b> treats managed habitats more strictly (managed forest 0.70, sealed 0.05, mown semi-natural grassland as extensive use). The truth for a site lies in this range. Field monitoring proves it.</p>
+      <p class="note">Habitat names: English first, official German name in brackets. English from the FOEN/WSL symbology where official, otherwise an NFA translation (ref/typoch_names_en.csv).</p>
       <p class="note">Land use only. Roads, fragmentation, nitrogen, climate are not included. Open water is outside the terrestrial MSA. Not the official GBS of CDC Biodiversité.</p>
       <p class="note"><button class="link" id="btn-method" type="button">Full method, tables, validation</button> · <a id="repo" href="#" target="_blank" rel="noopener">code on GitHub</a></p>
     </section>
@@ -249,7 +252,13 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   // ================================================================ helpers
   const $ = id => document.getElementById(id);
   const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-  const nf = (x, d = 2) => x == null || !isFinite(x) ? "–" : Number(x).toLocaleString("de-CH", { minimumFractionDigits: d, maximumFractionDigits: d });
+  // display: at most two decimals; tiny non-zero values as "<0.01" (downloads keep full precision)
+  const nf = (x, d = 2) => {
+    if (x == null || !isFinite(x)) return "–";
+    d = Math.min(d, 2);
+    if (d === 2 && x !== 0 && Math.abs(x) < 0.005) return x > 0 ? "<0.01" : ">−0.01";
+    return Number(x).toLocaleString("de-CH", { minimumFractionDigits: d, maximumFractionDigits: d });
+  };
   const LV95 = D.lv95;
   const toLV = proj4("EPSG:4326", LV95);
   const REF = D.ref, COEF = REF.coef, MAP = REF.mapping, NAMES = REF.names || {};
@@ -622,17 +631,20 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
     const T = R.reduce((a, r) => a + r.terrestrial_ha, 0), A = R.reduce((a, r) => a + r.area_ha, 0);
     const msa = T ? R.reduce((a, r) => a + (r[v].msa || 0) * r.terrestrial_ha, 0) / T : null;
     const anyGain = R.some(r => r.rules.length);
+    const sumV = (vv, k) => R.reduce((a, r) => a + (r[vv][k] || 0), 0);
+    const msaV = vv => T ? R.reduce((a, r) => a + (r[vv].msa || 0) * r.terrestrial_ha, 0) / T : null;
+    const two = (fn, d, plus) => ["central", "conservative"].map(vv => { const x = fn(vv); return (plus && x >= 0 ? "+" : "") + nf(x, d); }).join(" / ");
     $("stats").innerHTML = [
       [nf(A, 2), "ha", `Area of ${feats.length} polygon${feats.length > 1 ? "s" : ""}`],
-      [nf(msa, 3), "", `MSA now, ${v}`],
-      [nf(sum("footprint_msa_ha"), 2), "MSA.ha", `Footprint = ${nf(sum("footprint_msa_ha") / 100, 4)} MSA.km²`],
-      anyGain ? [(sum("gain_msa_ha") >= 0 ? "+" : "") + nf(sum("gain_msa_ha"), 2), "MSA.ha", "Gain of the measures"] : ["–", "", "Gain: add a measure below"],
-    ].map(([val, u, t]) => `<div class="stat"><dt>${esc(t)}</dt><dd>${val}${u ? `<small>${u}</small>` : ""}</dd></div>`).join("");
+      [two(msaV, 3), "", "MSA now, central / conservative"],
+      [two(vv => sumV(vv, "footprint_msa_ha"), 2), "MSA.ha", "Footprint, central / conservative"],
+      anyGain ? [two(vv => sumV(vv, "gain_msa_ha"), 2, true), "MSA.ha", "Gain of the measures, central / conservative"] : ["–", "", "Gain: add a measure below"],
+    ].map(([val, u, t], i) => `<div class="stat wide"><dt>${esc(t)}</dt><dd>${val}${u ? `<small>${u}</small>` : ""}</dd></div>`).join("");
     $("polys").innerHTML = feats.map((f, i) => {
       const r = f.res[v];
       return `<li><button class="ps" type="button" data-i="${i}" aria-current="${i === sel}" style="--c:${cssv(BINS.find(([a, b]) => (r.msa ?? 0) >= a && (r.msa ?? 0) < b)[2])}">
         <span class="bar"></span><span class="nm">${esc(f.name)}<span>${nf(f.res.area_ha, 2)} ha${f.res.nodata_ha > 0.005 ? ` · ${nf(f.res.nodata_ha, 2)} ha outside the map` : ""}</span></span>
-        <span class="num">MSA <b>${nf(r.msa, 3)}</b><br>${nf(r.footprint_msa_ha, 2)} MSA.ha</span></button></li>`;
+        <span class="num">MSA <b>${nf(f.res.central.msa, 3)} / ${nf(f.res.conservative.msa, 3)}</b><br>${nf(f.res.central.footprint_msa_ha, 2)} / ${nf(f.res.conservative.footprint_msa_ha, 2)} MSA.ha</span></button></li>`;
     }).join("");
     for (const b of $("polys").querySelectorAll(".ps")) b.onclick = () => select(+b.dataset.i);
     if (sel >= 0) renderDetail();
@@ -662,13 +674,14 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
     const f = feats[sel], r = f.res, v = variant, c = r[v];
     const rows = [...r.pieces].sort((a, b) => b.area_ha - a.area_ha);
     $("detail").innerHTML = `<p style="margin:0 0 6px;font-weight:640">${esc(f.name)}</p>
-      <table class="t"><thead><tr><th>Habitat (TypoCH)</th><th class="n">ha</th><th class="n">MSA</th><th class="n">MSA.ha lost</th></tr></thead><tbody>
+      <table class="t"><thead><tr><th>Habitat (TypoCH)</th><th class="n">ha</th><th class="n">MSA</th><th class="n">Footprint (MSA.ha)</th></tr></thead><tbody>
       ${rows.map(p => `<tr><td><span class="sw" style="--c:${p.terrestrial ? cssv(BINS.find(([a, b]) => p[v].msa >= a && p[v].msa < b)[2]) : cssv("--water")}"></span>${esc(p.name)} <span class="note">${esc(p.typoch)}</span></td>
-        <td class="n">${nf(p.area_ha, 3)}</td><td class="n">${p.terrestrial ? nf(p[v].msa, 3) : "water"}</td><td class="n">${p.terrestrial ? nf(p.area_ha * (1 - p[v].msa), 3) : "–"}</td></tr>`).join("")}
+        <td class="n">${nf(p.area_ha, 3)}</td><td class="n">${p.terrestrial ? `${nf(p.central.msa, 2)}<span class="cv">${nf(p.conservative.msa, 2)}</span>` : "water"}</td><td class="n">${p.terrestrial ? `${nf(p.area_ha * (1 - p.central.msa), 3)}<span class="cv">${nf(p.area_ha * (1 - p.conservative.msa), 3)}</span>` : "–"}</td></tr>`).join("")}
       ${r.nodata_ha > 0.0005 ? `<tr><td><span class="sw" style="--c:${cssv("--nodata")}"></span>Outside the Habitat Map</td><td class="n">${nf(r.nodata_ha, 3)}</td><td class="n">–</td><td class="n">–</td></tr>` : ""}
-      <tr class="sum"><td>Terrestrial total</td><td class="n">${nf(r.terrestrial_ha, 3)}</td><td class="n">${nf(c.msa, 3)}</td><td class="n">${nf(c.footprint_msa_ha, 3)}</td></tr></tbody></table>
-      <p class="note" style="margin-top:6px">MSA birds &amp; mammals ${nf(c.msa_wb, 3)} · plants ${nf(c.msa_pl, 3)} · overall = mean ${nf(c.msa, 3)}.
-      ${r.rules.length ? `<br><b style="color:var(--ink)">Measure: MSA ${nf(c.msa, 3)} → ${nf(c.msa_target, 3)}, gain ${nf(c.gain_msa_ha, 3)} MSA.ha${c.gain_msa_ha_per_year != null ? `, ${nf(c.gain_msa_ha_per_year, 3)} per year over ${c.years} years` : ""}.</b>` : ""}</p>`;
+      <tr class="sum"><td>Terrestrial total</td><td class="n">${nf(r.terrestrial_ha, 3)}</td><td class="n">${nf(r.central.msa, 3)}<span class="cv">${nf(r.conservative.msa, 3)}</span></td><td class="n">${nf(r.central.footprint_msa_ha, 3)}<span class="cv">${nf(r.conservative.footprint_msa_ha, 3)}</span></td></tr></tbody></table>
+      <p class="note" style="margin-top:4px">Per row: central on top, conservative below in grey.</p>
+      <p class="note" style="margin-top:6px">${["central", "conservative"].map(vv => { const x = r[vv]; return `${vv === "central" ? "Central" : "Conservative"}: birds &amp; mammals ${nf(x.msa_wb, 3)} · plants ${nf(x.msa_pl, 3)} · MSA = mean ${nf(x.msa, 3)}.`; }).join("<br>")}
+      ${r.rules.length ? ["central", "conservative"].map(vv => { const x = r[vv]; return `<br><b style="color:var(--ink)">Measure, ${vv}: MSA ${nf(x.msa, 3)} → ${nf(x.msa_target, 3)}, gain ${nf(x.gain_msa_ha, 3)} MSA.ha${x.gain_msa_ha_per_year != null ? `, ${nf(x.gain_msa_ha_per_year, 3)} per year over ${x.years} years` : ""}.</b>`; }).join("") : ""}</p>`;
     const present = [...new Set(r.pieces.filter(p => p.terrestrial).map(p => p.typoch))];
     const fromOpts = sel => `<option value="*"${sel === "*" ? " selected" : ""}>Whole parcel</option>` +
       [...new Set([...present, ...present.map(p => p.split(".").slice(0, 2).join("."))])].sort().map(c => `<option value="${c}"${sel === c ? " selected" : ""}>${esc(c)} ${esc(hname(c))}</option>`).join("");
@@ -817,7 +830,7 @@ Gain per year    = Gain / (target year − ${YEAR})                    linear pa
             [`Gain per year${c.years ? ` (${c.years} years, linear)` : ""}`, nf(c.gain_msa_ha_per_year, 3), nf(k.gain_msa_ha_per_year, 3)]] : []), [1, 2]) +
           (r.rules.length ? `<p><b>Measure:</b> ${r.rules.map(x => `${x.from === "*" ? "whole parcel" : "TypoCH " + esc(x.from) + " " + esc(hname(x.from))} → TypoCH ${esc(x.to)} ${esc(hname(x.to))}`).join("; ")}${r.target_year ? `, reached ${esc(r.target_year)}` : ""}.</p>` : "") +
           `<h3>Every number behind the result</h3>` +
-          tableHTML(["TypoCH", "Habitat", "Mapping row", "Pixels", "ha", "GLOBIO central", "B&M", "Plants", "MSA", "MSA.ha lost", "Conservative", "MSA cons.", "Target"],
+          tableHTML(["TypoCH", "Habitat", "Mapping row", "Pixels", "ha", "GLOBIO central", "B&M", "Plants", "MSA", "Footprint (MSA.ha)", "Conservative", "MSA cons.", "Target"],
             [...r.pieces].sort((a, b) => b.area_ha - a.area_ha).map(p => [esc(p.typoch), esc(p.name), esc(p.row), p.pixels.toLocaleString("de-CH"), nf(p.area_ha, 4),
               p.terrestrial ? `${esc(p.central.globio)} ${esc(p.central.globio_name)}` : "open water", p.terrestrial ? nf(p.central.wb, 3) : "–", p.terrestrial ? nf(p.central.pl, 3) : "–",
               p.terrestrial ? nf(p.central.msa, 4) : "–", p.terrestrial ? nf(p.area_ha * (1 - p.central.msa), 4) : "–", p.terrestrial ? esc(p.conservative.globio) : "–",
