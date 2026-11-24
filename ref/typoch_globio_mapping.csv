@@ -1,0 +1,53 @@
+typoch,name_de,terrestrial,globio_central,globio_conservative,why_central,why_conservative
+1,Gewässer,0,210,210,Open water: not part of terrestrial MSA (GLOBIO aquatic module),same
+1.1,Stehende Gewässer,0,210,210,Open water: not part of terrestrial MSA,same
+1.2,Fliessgewässer,0,210,210,Open water: not part of terrestrial MSA,same
+2,Ufer und Feuchtgebiete,1,180,180,Shore or wetland vegetation without further class: natural flooded herbaceous cover,same
+2.0,Künstliche Ufer,1,1,G35_URB,Artificial banks are built structures: urban class,Sealed surface: GLOBIO 3.5 dense urban 0.05
+2.1,Ufer mit Vegetation,1,180,180,Reed beds and shore vegetation: natural flooded herbaceous cover,same
+2.2,Flachmoore,1,180,22,Fen plant communities: natural flooded herbaceous cover,Fens kept open by litter mowing: extensive use (rangeland class)
+2.3,Feuchtwiesen,1,180,22,Wet meadow plant communities: natural flooded herbaceous cover,Mown wet meadows: extensive use (rangeland class)
+2.3.2,Nährstoffreiche Feuchtwiese,1,22,21,Fertilised wet meadow (Calthion): extensive agricultural use,Regularly fertilised and mown: intensive pasture class
+2.3.3,Spierstaudenflur,1,180,40,Tall-herb wet vegetation (Filipendulion): natural,Often fallow wet meadows: secondary vegetation
+2.4,Hochmoore,1,180,180,Raised bogs: natural,same
+2.5,Wechselnasse Pionierfluren,1,180,180,Seasonally flooded pioneer vegetation: natural,same
+3,"Gletscher, Fels, Schutt und Geröll",1,201,201,Rock and scree: natural bare,same
+3.1,"Gletscher, Firn und Schnee",1,220,220,Permanent snow and ice: natural,same
+3.2,Alluvionen und Moränen,1,202,202,Unconsolidated bare: natural,same
+3.3,Steinschutt- und Geröllfluren,1,202,202,Scree: natural,same
+3.4,Felsen,1,201,201,Rock: natural,same
+4,Grünland (nicht weiter bestimmt),1,20,21,Grassland without further class: GLOBIO grazing (general),Assumed intensive: intensive pasture
+4.0,Kunstrasen,1,21,21,Sown or artificial lawns (incl. sports turf): intensive pasture class,same
+4.1,Felsgrusfluren,1,130,130,Pioneer swards on rock: natural grassland,same
+4.2,Wärmeliebende Trockenrasen,1,130,22,Dry grassland plant communities: natural grassland,Mown or grazed semi-natural grassland: extensive rangeland
+4.3,Gebirgs-Magerrasen,1,130,22,Alpine grassland communities: natural grassland,Alpine pastures with grazing: extensive rangeland
+4.4,Schneetälchen,1,130,130,Snowbed vegetation: natural,same
+4.5,Fettwiesen und -weiden,1,20,21,Fertilised meadows and pastures: GLOBIO grazing (general),Intensive pasture
+4.5.2,Bergfettwiese,1,22,20,Mountain hay meadow (Polygono-Trisetion): moderate use,GLOBIO grazing (general)
+4.5.3,Fettweide,1,21,21,Fertilised pasture (Cynosurion): intensive pasture,same
+4.6,Grasbrachen,1,40,40,Grass fallow: secondary vegetation,same
+5,"Krautsäume, Hochstaudenfluren und Gebüsche",1,120,40,Fringes and scrub: natural shrubland,Planted or managed scrub: secondary vegetation
+5.1,Krautsäume,1,120,40,Herbaceous fringes: natural,Secondary vegetation
+5.2,Hochstauden- und Schlagfluren,1,120,40,Tall-herb and clearing vegetation: natural dynamics,Secondary vegetation after cutting
+5.3,Gebüsche,1,120,40,"Hedges, thickets, forest edges: natural shrubland",Planted or cut hedges: secondary vegetation
+5.4,Zwergstrauchheiden,1,120,120,Dwarf shrub heaths: natural,same
+6,Wälder,1,90,G35_SEL,Forest plant communities: natural tree cover,Managed near-natural forest: GLOBIO 3.5 selective logging 0.70
+6.0,Forstpflanzungen,1,30,30,Plantations: GLOBIO forestry,same
+6.1,Bruch- und Auenwälder,1,160,G35_SEL,Alluvial and swamp forest: natural flooded tree cover,Managed forest: GLOBIO 3.5 selective logging 0.70
+6.2,Buchenwälder,1,90,G35_SEL,Beech forest communities: natural tree cover,Managed forest: GLOBIO 3.5 selective logging 0.70
+6.3,Andere Laubwälder,1,90,G35_SEL,Other broadleaf forest communities: natural tree cover,Managed forest: GLOBIO 3.5 selective logging 0.70
+6.4,Wärmeliebende Föhrenwälder,1,90,G35_SEL,Thermophilous pine forest: natural tree cover,Managed forest: GLOBIO 3.5 selective logging 0.70
+6.5,Moorwälder,1,160,160,Bog forest: natural flooded tree cover,same
+6.6,Gebirgs-Nadelwälder,1,90,G35_SEL,Montane conifer forest communities: natural tree cover,Managed forest: GLOBIO 3.5 selective logging 0.70
+7,Pioniervegetation gestörter Plätze,1,40,1,Ruderal vegetation: secondary vegetation,Strongly disturbed sites: urban class
+7.1,Trittrasen und Ruderalfluren,1,40,1,Trampled and ruderal vegetation: secondary vegetation,Strongly disturbed sites: urban class
+7.2,Anthropogene Steinfluren,1,1,G35_URB,"Walls, gravel surfaces: urban class",Sealed or near-sealed: GLOBIO 3.5 dense urban 0.05
+8,"Pflanzungen, Äcker und Kulturen",1,10,11,Crops: GLOBIO cropland (general),Intensive cropland
+8.1,"Baumschulen, Obstgärten, Rebberge",1,10,11,Orchards and vineyards: GLOBIO cropland (general),Intensive cropland
+8.2,Äcker,1,10,11,Arable fields: GLOBIO cropland (general),Intensive cropland
+9,"Bauten, Anlagen",1,1,G35_URB,Built-up: GLOBIO4 urban,Sealed: GLOBIO 3.5 dense urban 0.05
+9.0,Siedlungsflächen (Name gemäss TypoCH-Tabelle),1,1,1,Settlement area: GLOBIO4 urban,Not necessarily sealed: GLOBIO4 urban kept
+9.1,"Deponien, Lagerplätze",1,1,G35_URB,Dumps and storage: urban,Sealed or compacted: GLOBIO 3.5 dense urban 0.05
+9.2,Gebäude,1,1,G35_URB,Buildings: urban,Sealed: GLOBIO 3.5 dense urban 0.05
+9.3,Verkehrswege,1,1,G35_URB,Roads and railways: urban,Sealed: GLOBIO 3.5 dense urban 0.05
+9.4,Versiegelte Sport- und Parkplätze,1,1,G35_URB,Sealed sports and parking areas: urban,Sealed: GLOBIO 3.5 dense urban 0.05

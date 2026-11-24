@@ -1,0 +1,861 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Swiss Biodiversity Score Tool · NFA</title>
+<meta name="description" content="Biodiversity footprint per parcel in Switzerland: GBS-consistent MSA (GLOBIO4 land-use module) from the Habitat Map of Switzerland. Upload a KML, get every number behind the result.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..125,400..800&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="lib/leaflet.css">
+<style>
+/* Same visual system as the NFA golf map: panel left, map right. */
+:root {
+  --paper: #f6f7f5; --land: #fbfcfa; --void: #dde3df; --ink: #17201c; --muted: #56625c; --rule: #d3dad6;
+  --accent: #227766; --deep: #0C3024; --mint: #D3E7D1; --blue: #1E4BD2; --sky: #B4D7FF; --warn: #a3302f;
+  --shadow: 0 6px 24px rgba(23, 32, 28, .16);
+  --m0: #F1EFE6; --m1: #D3E7D1; --m2: #8FC2A4; --m3: #3E8C74; --m4: #0C3024; --water: #5596FA; --nodata: #c9cfcb;
+  --f-display: "Archivo", "Helvetica Neue", Arial, sans-serif;
+  --f-body: "Archivo", "Helvetica Neue", Arial, sans-serif;
+  --f-data: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+}
+html, body { height: 100%; margin: 0; }
+body { background: var(--paper); color: var(--ink); font-family: var(--f-body); font-size: 14px; line-height: 1.45; }
+.app { display: grid; grid-template-columns: minmax(340px, 420px) 1fr; height: 100%; }
+.panel { overflow-y: auto; border-right: 1px solid var(--rule); padding: 22px 20px 18px 18px;
+  display: flex; flex-direction: column; gap: 20px; min-width: 0; }
+.mapwrap { position: relative; min-width: 0; background: var(--void); }
+#map { position: absolute; inset: 0; background: var(--void); }
+.brand-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 0 0 14px; }
+.brand { display: block; width: 116px; height: auto; }
+.author { font-size: 10.5px; line-height: 1.2; color: var(--muted); text-align: right; }
+.eyebrow { margin: 0 0 6px; font-family: var(--f-data); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+h1 { margin: 0; font-family: var(--f-display); font-weight: 780; font-size: 30px; line-height: 1.02;
+  font-variation-settings: "wdth" 118; letter-spacing: -.01em; }
+h1 .flag { display: block; height: 6px; margin-top: 12px; width: 96px; border-radius: 3px;
+  background: linear-gradient(90deg, var(--m1) 0 30%, var(--m3) 30% 70%, var(--deep) 70%); }
+.lede { margin: 12px 0 0; color: var(--muted); }
+h2 { margin: 0 0 10px; font-size: 11px; font-family: var(--f-data); font-weight: 500; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--muted); }
+.drop { display: block; border: 1.5px dashed var(--edge, #84918b); border-radius: 10px; padding: 16px; text-align: center; cursor: pointer;
+  background: var(--land); transition: background .15s; }
+.drop.over { background: var(--mint); }
+.drop b { font-weight: 640; }
+.drop small { display: block; color: var(--muted); margin-top: 4px; font-size: 12px; }
+.drop input { display: none; }
+.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.btn { font: 600 13px var(--f-body); color: var(--ink); background: var(--paper); border: 1px solid var(--rule);
+  border-radius: 6px; padding: 6px 10px; cursor: pointer; }
+.btn:hover { background: var(--land); }
+.btn.primary { color: #fff; background: var(--deep); border-color: var(--deep); }
+.btn:disabled { opacity: .5; cursor: default; }
+.link { font: inherit; color: var(--accent); background: none; border: 0; padding: 0; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+.seg { display: inline-flex; border: 1px solid var(--rule); border-radius: 7px; overflow: hidden; }
+.seg button { font: 600 12.5px var(--f-body); border: 0; background: var(--paper); color: var(--muted); padding: 6px 10px; cursor: pointer; }
+.seg button[aria-pressed="true"] { background: var(--deep); color: #fff; }
+.stats { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 18px; margin: 0; }
+.stat { min-width: 0; border-top: 1px solid var(--rule); padding-top: 8px; display: flex; flex-direction: column-reverse; justify-content: flex-end; }
+.stat dd { margin: 0; font-family: var(--f-display); font-weight: 720; font-size: 23px; font-variation-settings: "wdth" 112;
+  font-variant-numeric: tabular-nums; line-height: 1.1; }
+.stat dd small { font-family: var(--f-data); font-weight: 400; font-size: 12px; color: var(--muted); margin-left: 3px; }
+.stat dt { font-size: 12.5px; color: var(--muted); margin-top: 3px; }
+.stat.wide { grid-column: 1 / -1; }
+.t td .cv { display: block; color: var(--muted); }
+.polys { list-style: none; margin: 0; padding: 0; }
+.polys li + li { border-top: 1px solid var(--rule); }
+.ps { display: grid; grid-template-columns: 4px 1fr auto; gap: 10px; align-items: center; width: 100%; text-align: left;
+  font: inherit; color: inherit; background: none; border: 0; padding: 8px 4px; cursor: pointer; }
+.ps .bar { width: 4px; align-self: stretch; border-radius: 2px; background: var(--c, var(--m3)); }
+.ps .nm { font-weight: 560; min-width: 0; overflow-wrap: anywhere; }
+.ps .nm span { display: block; font-size: 12px; color: var(--muted); font-weight: 400; }
+.ps .num { font-family: var(--f-data); font-size: 12px; color: var(--muted); text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.ps .num b { color: var(--ink); font-weight: 500; }
+.ps[aria-current="true"] { background: color-mix(in srgb, var(--mint) 55%, transparent); border-radius: 6px; }
+.note { font-size: 12.5px; color: var(--muted); margin: 0; }
+.note + .note { margin-top: 8px; }
+.err { color: var(--warn); font-size: 13px; margin: 8px 0 0; }
+.err:empty { display: none; }
+table.t { width: 100%; border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; }
+table.t th { text-align: left; font: 500 10.5px var(--f-data); letter-spacing: .04em; text-transform: uppercase; color: var(--muted);
+  border-bottom: 1px solid var(--rule); padding: 4px 4px; vertical-align: bottom; }
+table.t td { border-bottom: 1px solid var(--rule); padding: 4px 4px; vertical-align: top; }
+table.t td.n, table.t th.n { text-align: right; font-family: var(--f-data); white-space: nowrap; }
+table.t tr.sum td { font-weight: 640; border-top: 1.5px solid var(--ink); }
+.sw { display: inline-block; width: 10px; height: 10px; border-radius: 2px; background: var(--c); margin-right: 6px; vertical-align: -1px; }
+.rules { display: grid; gap: 6px; }
+.rule { display: grid; grid-template-columns: 1fr 14px 1fr 26px; gap: 6px; align-items: center; }
+.rule select, .yr input, .rule input { font: 13px var(--f-body); color: var(--ink); background: var(--paper); border: 1px solid var(--rule);
+  border-radius: 6px; padding: 5px 6px; min-width: 0; width: 100%; }
+.yr { display: grid; grid-template-columns: auto 90px; gap: 8px; align-items: center; font-size: 13px; color: var(--muted); }
+.toggles { display: grid; gap: 0; }
+.tog { display: grid; grid-template-columns: 18px 26px 1fr; align-items: center; gap: 7px; padding: 3px 4px; border-radius: 6px; cursor: pointer; line-height: 1.3; }
+.tog:hover { background: color-mix(in srgb, var(--ink) 5%, transparent); }
+.tog input { margin: 0; accent-color: var(--accent); width: 15px; height: 15px; }
+.tog .t { font-weight: 560; } .tog .s { display: block; color: var(--muted); font-size: 12px; }
+.swb { width: 26px; height: 14px; display: block; border-radius: 2px; }
+.legend { display: flex; flex-wrap: wrap; gap: 2px 10px; padding: 2px 4px 4px 30px; font-size: 11.5px; color: var(--muted); }
+.legend span { display: inline-flex; align-items: center; gap: 5px; }
+.legend i { width: 9px; height: 9px; border-radius: 2px; background: var(--c); }
+.legend.hab { flex-direction: column; flex-wrap: nowrap; gap: 3px; max-height: 280px; overflow-y: auto; }
+.legend.hab i { flex: none; width: 12px; height: 12px; border: 1px solid rgba(0,0,0,.15); }
+.legend.hab .hd { margin-top: 4px; font-weight: 640; color: var(--ink); }
+.legend.hab b { color: var(--ink); font-weight: 600; }
+.legend.hab .src { margin-top: 4px; font-size: 11px; }
+.sources { font-size: 12px; color: var(--muted); border-top: 1px solid var(--rule); padding-top: 12px; margin-top: auto; }
+.sources p { margin: 0 0 6px; }
+a { color: var(--accent); text-underline-offset: 2px; }
+button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.busy { position: absolute; z-index: 950; left: 50%; top: 14px; transform: translateX(-50%); background: var(--paper); border: 1px solid var(--rule);
+  border-radius: 8px; padding: 6px 12px; font: 12.5px var(--f-data); box-shadow: var(--shadow); }
+.busy[hidden] { display: none; }
+.readout { position: absolute; z-index: 900; right: 10px; bottom: 10px; font: 11.5px/1.35 var(--f-data); text-align: right;
+  background: color-mix(in srgb, var(--paper) 90%, transparent); border: 1px solid var(--rule); border-radius: 6px; padding: 5px 8px; pointer-events: none; }
+.leaflet-container { font-family: var(--f-body); background: var(--void); }
+.leaflet-bar { border-radius: 6px !important; border: 1px solid var(--rule) !important; box-shadow: var(--shadow) !important; }
+.leaflet-bar a { color: var(--ink); background: var(--paper); }
+.leaflet-popup-content-wrapper { border-radius: 10px; }
+.pp h3 { margin: 0 20px 4px 0; font: 700 14px var(--f-display); }
+.pp dl { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; margin: 0; font-size: 12.5px; }
+.pp dt { color: var(--muted); } .pp dd { margin: 0; font-variant-numeric: tabular-nums; }
+
+/* ---- report (screen: overlay; print: the only thing printed) ---- */
+#report { position: fixed; inset: 0; z-index: 2000; background: #fff; overflow-y: auto; display: none; }
+#report.open { display: block; }
+.rbar { position: sticky; top: 0; display: flex; gap: 8px; justify-content: flex-end; padding: 10px 16px; background: color-mix(in srgb, #fff 92%, transparent);
+  border-bottom: 1px solid var(--rule); z-index: 1; }
+.doc { max-width: 900px; margin: 0 auto; padding: 28px 32px 60px; color: var(--ink); font-size: 13.5px; }
+.doc h1 { font-size: 28px; }
+.doc h2 { font: 700 19px var(--f-display); letter-spacing: 0; text-transform: none; color: var(--deep); margin: 30px 0 8px; break-after: avoid; }
+.doc h3 { font: 700 15px var(--f-display); margin: 18px 0 6px; color: var(--deep); break-after: avoid; }
+.doc p { margin: 6px 0; max-width: 75ch; }
+.doc .meta { color: var(--muted); font-size: 12.5px; }
+.doc table.t { font-size: 12px; margin: 8px 0 4px; }
+.doc .f { font-family: var(--f-data); font-size: 12.5px; background: var(--paper); border: 1px solid var(--rule); border-radius: 6px; padding: 8px 10px; margin: 8px 0; white-space: pre-wrap; }
+.doc .poly { break-before: page; }
+.doc .poly:first-of-type { break-before: auto; }
+.doc ul { margin: 6px 0; padding-left: 20px; } .doc li { margin: 3px 0; max-width: 75ch; }
+@media print {
+  @page { size: A4; margin: 16mm 14mm; }
+  body { background: #fff; }
+  .app, .rbar { display: none !important; }
+  #report { position: static; display: block !important; overflow: visible; }
+  .doc { padding: 0; max-width: none; }
+  table.t { break-inside: auto; } tr { break-inside: avoid; }
+}
+@media (max-width: 760px) {
+  .app { display: flex; flex-direction: column; height: auto; }
+  .mapwrap { order: -1; height: 55vh; min-height: 320px; }
+  .panel { border-right: 0; overflow: visible; }
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="panel" aria-label="Parcel tool">
+    <header>
+      <div class="brand-row">
+        <img class="brand" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAjAAAAC4CAYAAAD9jdbzAAAWfmNhQlgAABZ+anVtYgAAAB5qdW1kYzJwYQARABCAAACqADibcQNjMnBhAAAAFlhqdW1iAAAAR2p1bWRjMm1hABEAEIAAAKoAOJtxA3VybjpjMnBhOjBmM2RhMzU3LTYwYmYtNGQ0OC05NWJhLWI1NWIxYjRiZGFlMQAAAAOTanVtYgAAAClqdW1kYzJhcwARABCAAACqADibcQNjMnBhLmFzc2VydGlvbnMAAAAAuGp1bWIAAABEanVtZGNib3IAEQAQgAAAqgA4m3ETYzJwYS5pbmdyZWRpZW50LnYzAAAAABhjMnNo5/eggz24DuzuA9PPl1BxwgAAAGxjYm9yo2lkYzpmb3JtYXRpaW1hZ2UvcG5namluc3RhbmNlSUR4LHhtcDppaWQ6YmI5OTZiZDMtNjUwNi00NmZiLTk1YTItMDM4ZWI0M2E1NDg1bHJlbGF0aW9uc2hpcGhwYXJlbnRPZgAAAeJqdW1iAAAAQWp1bWRjYm9yABEAEIAAAKoAOJtxE2MycGEuYWN0aW9ucy52MgAAAAAYYzJzaIG7mZB74qAJgtZwtu6qpvwAAAGZY2JvcqJnYWN0aW9uc4KiZmFjdGlvbmtjMnBhLm9wZW5lZGpwYXJhbWV0ZXJzoWtpbmdyZWRpZW50c4GiY3VybHgtc2VsZiNqdW1iZj1jMnBhLmFzc2VydGlvbnMvYzJwYS5pbmdyZWRpZW50LnYzZGhhc2hYILzoz8miWeknroMDpHO2efzOJX02UAxxWNiKE15vV70MpGZhY3Rpb254HWNvbS5hbnRocm9waWMuY2xhdWRlLnByb3ZpZGVkanBhcmFtZXRlcnOheB9jb20uYW50aHJvcGljLm9yaWdpbi1jb25maWRlbmNlZ3Vua25vd25rZGVzY3JpcHRpb254ZkNsYXVkZSBwcm92aWRlZCB0aGlzIGZpbGUgYXQgdGhlIHJlcXVlc3Qgb2YgYSB1c2VyIGFuZCBtYXkgaGF2ZSBjcmVhdGVkIG9yIG1vZGlmaWVkIHRoZSBmaWxlIGNvbnRlbnRzLm1zb2Z0d2FyZUFnZW50oWRuYW1lZkNsYXVkZXJhbGxBY3Rpb25zSW5jbHVkZWT1AAAAyGp1bWIAAABAanVtZGNib3IAEQAQgAAAqgA4m3ETYzJwYS5oYXNoLmRhdGEAAAAAGGMyc2iDiynF3IUQszy5JalEzqZ3AAAAgGNib3KlY2FsZ2ZzaGEyNTZjcGFkTQAAAAAAAAAAAAAAAABkaGFzaFggEZmlaMi/h8C4GPFv3rL0r2RSAWeYx7N9sRT5PUAwBN1kbmFtZW5qdW1iZiBtYW5pZmVzdGpleGNsdXNpb25zgaJlc3RhcnQYIWZsZW5ndGgZFooAAAI+anVtYgAAACdqdW1kYzJjbAARABCAAACqADibcQNjMnBhLmNsYWltLnYyAAAAAg9jYm9ypWNhbGdmc2hhMjU2aXNpZ25hdHVyZXhNc2VsZiNqdW1iZj0vYzJwYS91cm46YzJwYTowZjNkYTM1Ny02MGJmLTRkNDgtOTViYS1iNTViMWI0YmRhZTEvYzJwYS5zaWduYXR1cmVqaW5zdGFuY2VJRHgseG1wOmlpZDpkMmU3MWI1OS01N2I5LTQzMTktYTI1OC1lNzE0YTk4ZjY1MGZyY3JlYXRlZF9hc3NlcnRpb25zg6JjdXJseC1zZWxmI2p1bWJmPWMycGEuYXNzZXJ0aW9ucy9jMnBhLmluZ3JlZGllbnQudjNkaGFzaFggvOjPyaJZ6SeugwOkc7Z5/M4lfTZQDHFY2IoTXm9XvQyiY3VybHgqc2VsZiNqdW1iZj1jMnBhLmFzc2VydGlvbnMvYzJwYS5hY3Rpb25zLnYyZGhhc2hYIGg8RG/b5goKM6Xa4f85wRn8XljKAOXH/AjiCSA0HmGjomN1cmx4KXNlbGYjanVtYmY9YzJwYS5hc3NlcnRpb25zL2MycGEuaGFzaC5kYXRhZGhhc2hYIMWco13uRJQNDKMUK/oNxJpv1TUbLPtLvvNDLxjdO7IEdGNsYWltX2dlbmVyYXRvcl9pbmZvo2RuYW1lb0FudGhyb3BpYyBGaWxlc2d2ZXJzaW9uZTEuMC4wa3NwZWNWZXJzaW9uZTIuNC4wAAAQOGp1bWIAAAAoanVtZGMyY3MAEQAQgAAAqgA4m3EDYzJwYS5zaWduYXR1cmUAAAAQCGNib3LShFkCEqIBJhghWQIKMIICBjCCAY2gAwIBAgIUQOWgCu7COdC+uIP6BkIFPWdVEwAwCgYIKoZIzj0EAwMwSTEXMBUGA1UEChMOQW50aHJvcGljLCBQQkMxLjAsBgNVBAMTJUFudGhyb3BpYyBDb250ZW50IENyZWRlbnRpYWxzIFJvb3QgQ0EwHhcNMjYwODA3MTg0MzU2WhcNMjgwODA2MTk0MzU2WjBEMRcwFQYDVQQKEw5BbnRocm9waWMsIFBCQzEpMCcGA1UEAxMgQW50aHJvcGljIENsYXVkZSBDb250ZW50IFNpZ25pbmcwWTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAASYegpry1AYBRTVNL1CpTlbROnY3dey+UrsF9C3phYrATN3ZHf93Mo8RQN0KOUuOn19P4oWNFWe5n2/She9N7eTo1gwVjAOBgNVHQ8BAf8EBAMCB4AwFQYDVR0lBA4wDAYKKwYBBAGD6F4CATAMBgNVHRMBAf8EAjAAMB8GA1UdIwQYMBaAFM5R4gSBTmRbI/jjxM+aPpzB11zCMAoGCCqGSM49BAMDA2cAMGQCMDFzHRSeAXrSy1WOzkbhPZ6Km2wGTmZ/2gK18k8BQGXyqz88Rdrz6CTX9flAnYNVxgIwcF9c3fVhqmJKpi+UhasNUMko69cyX6STPfta3Q8EjyzDjzoyrol46FP6VFHhvUcJoWNwYWRZDZ4AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA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" alt="Nature Finance Accelerator" width="560" height="184">
+        <span class="author">Created by Dr. Matthias Häni</span>
+      </div>
+      <p class="eyebrow" id="eyebrow">Switzerland</p>
+      <h1>Swiss Biodiversity <span style="white-space:nowrap">Score Tool</span><span class="flag" aria-hidden="true"></span></h1>
+      <p class="lede">Upload parcels as KML. Get the biodiversity footprint of each polygon, with every number behind it. The measure is <b>mean species abundance (MSA)</b>: 1 = intact nature, 0 = none left. Footprint in MSA.ha = hectares of intact nature lost. Method: GLOBIO4 land-use module, consistent with the Global Biodiversity Score (GBS), on the Habitat Map of Switzerland.</p>
+    </header>
+
+    <section aria-labelledby="h-in">
+      <h2 id="h-in">Parcels</h2>
+      <label class="drop" id="drop">
+        <input type="file" id="file" accept=".kml,.kmz,.geojson,.json,.csv" multiple>
+        <b>Drop KML, KMZ or GeoJSON here</b>, <span style="white-space:nowrap">or click to choose</span>
+        <small>One polygon or many. Optional per polygon: target_habitat, target_from, target_year.</small>
+      </label>
+      <div class="row" style="margin-top:8px"><button class="link" id="sample" type="button">Load the sample parcel (Mellingen)</button><span class="note" id="loaded"></span></div>
+      <p class="err" id="err" role="alert"></p>
+      <p class="err" id="fwarn" role="alert"></p>
+    </section>
+
+    <section id="sec-res" hidden aria-labelledby="h-res">
+      <h2 id="h-res">Result</h2>
+      <div class="row" style="justify-content:space-between;margin-bottom:10px">
+        <div class="row" style="gap:8px"><span class="note">Map colours</span><div class="seg" role="group" aria-label="Variant shown on the map">
+          <button type="button" data-v="central" aria-pressed="true">Central</button>
+          <button type="button" data-v="conservative" aria-pressed="false">Conservative</button>
+        </div></div>
+        <div class="row">
+          <button class="btn primary" id="btn-report" type="button">Report</button>
+          <button class="btn" id="btn-csv" type="button">CSV</button>
+          <button class="btn" id="btn-json" type="button">JSON</button>
+        </div>
+      </div>
+      <dl class="stats" id="stats"></dl>
+      <ul class="polys" id="polys" style="margin-top:14px"></ul>
+    </section>
+
+    <section id="sec-detail" hidden aria-labelledby="h-detail">
+      <h2 id="h-detail">Selected parcel</h2>
+      <div id="detail"></div>
+      <h2 style="margin-top:16px">Measure (target state)</h2>
+      <div class="rules" id="rules"></div>
+      <div class="row" style="margin-top:6px"><button class="btn" id="add-rule" type="button">Add a change</button>
+        <label class="yr">Target reached in <input type="number" id="tyear" min="2026" max="2100" step="1" placeholder="year"></label></div>
+      <p class="note" style="margin-top:6px">Example: Fettwiesen und -weiden (4.5) → Halbtrockenrasen (4.2.4). Gain = area × (MSA target − MSA now).</p>
+    </section>
+
+    <section aria-labelledby="h-layers">
+      <h2 id="h-layers">Map layers</h2>
+      <div class="toggles">
+        <label class="tog"><input type="checkbox" id="lay-img"><span class="swb" style="background:linear-gradient(135deg,#5f7a4a 0 30%,#9a8f73 30% 55%,#d9d6cf 55% 70%,#4d6a3f 70%)"></span>
+          <span><span class="t">Aerial imagery</span><span class="s">SWISSIMAGE, swisstopo</span></span></label>
+        <label class="tog"><input type="checkbox" id="lay-hab"><span class="swb" style="background:linear-gradient(90deg,#f5d36a 0 25%,#9fd27a 25% 50%,#3b8f4f 50% 75%,#8bb8e8 75%)"></span>
+          <span><span class="t">Habitat Map of Switzerland</span><span class="s">FOEN/WSL, official colours (WMS)</span></span></label>
+        <div class="legend hab" id="hab-legend" hidden></div>
+        <label class="tog"><input type="checkbox" id="lay-msa" checked><span class="swb" style="background:linear-gradient(90deg,var(--m0),var(--m2),var(--m4))"></span>
+          <span><span class="t">MSA per pixel</span><span class="s">The pixels behind the result, current variant</span></span></label>
+        <div class="legend" id="msa-legend"></div>
+      </div>
+    </section>
+
+    <section aria-labelledby="h-method">
+      <h2 id="h-method">Method in short</h2>
+      <p class="note">1. Each polygon is projected to Swiss LV95. 2. The Habitat Map of Switzerland gives the habitat type (TypoCH) per <span id="res-txt">2 m</span> pixel. 3. Each habitat type maps to one GLOBIO land-use class. 4. That class gives the MSA of birds &amp; mammals and of plants. MSA = mean of both. 5. Footprint = area × (1 − MSA).</p>
+      <p class="note"><b>Central</b> follows the GLOBIO4 classes. <b>Conservative</b> treats managed habitats more strictly (managed forest 0.70, sealed 0.05, mown semi-natural grassland as extensive use). The truth for a site lies in this range. Field monitoring proves it.</p>
+      <p class="note">Habitat names: English first, official German name in brackets. English from the FOEN/WSL symbology where official, otherwise an NFA translation (ref/typoch_names_en.csv).</p>
+      <p class="note">Land use only. Roads, fragmentation, nitrogen, climate are not included. Open water is outside the terrestrial MSA. Not the official GBS of CDC Biodiversité.</p>
+      <p class="note"><button class="link" id="btn-method" type="button">Full method, tables, validation</button> · <a id="repo" href="#" target="_blank" rel="noopener">code on GitHub</a></p>
+    </section>
+
+    <footer class="sources">
+      <p>Sources: <a href="https://www.doi.org/10.16904/envidat.723" target="_blank" rel="noopener">Habitat Map of Switzerland v1.2</a> (FOEN/WSL) · <a href="https://www.globio.info/" target="_blank" rel="noopener">GLOBIO4</a> (PBL) · <a href="https://www.swisstopo.admin.ch" target="_blank" rel="noopener">swisstopo</a></p>
+      <p>Source: FOEN/WSL · © swisstopo · NFA Foundation · <a href="mailto:matthias.haeni@nfa.ch">matthias.haeni@nfa.ch</a></p>
+    </footer>
+  </aside>
+
+  <main class="mapwrap">
+    <div id="map" aria-label="Map of the parcels"></div>
+    <div class="busy" id="busy" hidden></div>
+    <div class="readout" id="readout"></div>
+  </main>
+</div>
+
+<div id="report" aria-label="Report">
+  <div class="rbar"><button class="btn primary" id="r-print" type="button">Print or save as PDF</button><button class="btn" id="r-close" type="button">Close</button></div>
+  <div class="doc" id="doc"></div>
+</div>
+
+<script src="lib/leaflet.js"></script>
+<script src="lib/proj4.js"></script>
+<script>const D = {"version":"1.0 (19.11.2026)","label":"GBS-consistent MSA (GLOBIO4 land-use module)","lv95":"+proj=somerc +lat_0=46.9524055555556 +lon_0=7.43958333333333 +k_0=1 +x_0=2600000 +y_0=1200000 +ellps=bessel +towgs84=674.374,15.056,405.346,0,0,0,0 +units=m +no_defs","repo":"https://github.com/naturefinanceaccelerator/nfa-gbs-ch","sample":"sample_mellingen.kml","sample_kml":"<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<kml xmlns=\"http://www.opengis.net/kml/2.2\" xmlns:gx=\"http://www.google.com/kml/ext/2.2\" xmlns:kml=\"http://www.opengis.net/kml/2.2\" xmlns:atom=\"http://www.w3.org/2005/Atom\" xmlns:ex=\"http://earth.google.com/kml/ext\">\n<Document id=\"document\">\n\t<ex:extension>base64;CooBCoEBCn8KAggBEnkKdwokCiAKAwjQDxoHCNLtZRD_ASEAAAAAAADwPykAAAAAAAAAABgAEg8KCAitgO8HEP8BEKAfGAAaGgoHCP___wcQQBIICK2A7wcQ_wEYoB8gACgAIgkIARIFCP___wcqFwgBEggI____BxD_ARkAAAAAAADwPyAAEgQIARAA<\/ex:extension>\n\t<name>Untitled KML file<\/name>\n\t<gx:CascadingStyle kml:id=\"__managed_style_0A0DF91A244344CA04BB_highlight\">\n\t\t<ex:extension>base64;EgIYAQ<\/ex:extension>\n\t\t<Style>\n\t\t\t<IconStyle>\n\t\t\t\t<scale>1.2<\/scale>\n\t\t\t\t<Icon>\n\t\t\t\t\t<href>https://earth.google.com/earth/document/icon?color=1976d2&amp;id=2000&amp;scale=4<\/href>\n\t\t\t\t<\/Icon>\n\t\t\t\t<hotSpot x=\"64\" y=\"128\" xunits=\"pixels\" yunits=\"insetPixels\"/>\n\t\t\t<\/IconStyle>\n\t\t\t<LabelStyle>\n\t\t\t<\/LabelStyle>\n\t\t\t<LineStyle>\n\t\t\t\t<color>ff2dc0fb<\/color>\n\t\t\t\t<width>3<\/width>\n\t\t\t<\/LineStyle>\n\t\t\t<PolyStyle>\n\t\t\t\t<color>40ffffff<\/color>\n\t\t\t<\/PolyStyle>\n\t\t\t<BalloonStyle>\n\t\t\t\t<displayMode>hide<\/displayMode>\n\t\t\t<\/BalloonStyle>\n\t\t<\/Style>\n\t<\/gx:CascadingStyle>\n\t<gx:CascadingStyle kml:id=\"__managed_style_0A0DF91A244344CA04BB_normal\">\n\t\t<ex:extension>base64;EgIYAQ<\/ex:extension>\n\t\t<Style>\n\t\t\t<IconStyle>\n\t\t\t\t<Icon>\n\t\t\t\t\t<href>https://earth.google.com/earth/document/icon?color=1976d2&amp;id=2000&amp;scale=4<\/href>\n\t\t\t\t<\/Icon>\n\t\t\t\t<hotSpot x=\"64\" y=\"128\" xunits=\"pixels\" yunits=\"insetPixels\"/>\n\t\t\t<\/IconStyle>\n\t\t\t<LabelStyle>\n\t\t\t<\/LabelStyle>\n\t\t\t<LineStyle>\n\t\t\t\t<color>ff2dc0fb<\/color>\n\t\t\t\t<width>2<\/width>\n\t\t\t<\/LineStyle>\n\t\t\t<PolyStyle>\n\t\t\t\t<color>40ffffff<\/color>\n\t\t\t<\/PolyStyle>\n\t\t\t<BalloonStyle>\n\t\t\t\t<displayMode>hide<\/displayMode>\n\t\t\t<\/BalloonStyle>\n\t\t<\/Style>\n\t<\/gx:CascadingStyle>\n\t<StyleMap id=\"__managed_style_0A0DF91A244344CA04BB\">\n\t\t<Pair>\n\t\t\t<key>normal<\/key>\n\t\t\t<styleUrl>#__managed_style_0A0DF91A244344CA04BB_normal<\/styleUrl>\n\t\t<\/Pair>\n\t\t<Pair>\n\t\t\t<key>highlight<\/key>\n\t\t\t<styleUrl>#__managed_style_0A0DF91A244344CA04BB_highlight<\/styleUrl>\n\t\t<\/Pair>\n\t<\/StyleMap>\n\t<Placemark id=\"0E64F1437C4344CA0484\">\n\t\t<name>Mellingen<\/name>\n\t\t<LookAt>\n\t\t\t<longitude>8.285471264066791<\/longitude>\n\t\t\t<latitude>47.41652207768107<\/latitude>\n\t\t\t<altitude>382.0703564095259<\/altitude>\n\t\t\t<heading>-6.875060904685803e-07<\/heading>\n\t\t\t<tilt>0.1006920809271497<\/tilt>\n\t\t\t<gx:fovy>35<\/gx:fovy>\n\t\t\t<range>1419.77870789211<\/range>\n\t\t\t<altitudeMode>absolute<\/altitudeMode>\n\t\t<\/LookAt>\n\t\t<styleUrl>#__managed_style_0A0DF91A244344CA04BB<\/styleUrl>\n\t\t<Polygon>\n\t\t\t<outerBoundaryIs>\n\t\t\t\t<LinearRing>\n\t\t\t\t\t<coordinates>\n\t\t\t\t\t\t8.285479013754223,47.41859329456114,0 8.283349468427623,47.41692328659631,0 8.28874706959021,47.41393674358936,0 8.290725392386232,47.41531578614698,0 8.289774203726195,47.41595533417683,0 8.288421071193133,47.41652725203594,0 8.28793458853,47.41706184624664,0 8.286185997703246,47.41824099800062,0 8.285479013754223,47.41859329456114,0 \n\t\t\t\t\t<\/coordinates>\n\t\t\t\t<\/LinearRing>\n\t\t\t<\/outerBoundaryIs>\n\t\t<\/Polygon>\n\t<\/Placemark>\n<\/Document>\n<\/kml>\n","hab_legend":[["1.1 Standing fresh water","#0d74fc",["1.1","STR1112","STR111X","1.1.X"]],["1.2 Running water","#589ffc",["1.2","STR1205"]],["2 Banks, shores and wetlands","#ccf8ff",["2"]],["2.1 Bank and shore vegetation","#12deff",["2.1","2.1.2.1","2.1.2.2"]],["2.2 Fens and transition mires","#5ae3fe",["2.2.1","2.2.2","2.2.3"]],["2.3 Wet meadows","#7fe9fe",["2.3.1","2.3.2"]],["2.4 Raised bogs","#9beefe",["2.4.1"]],["3 Glaciers, rocks, screes and gravel","#d5e8f2",["3"]],["3.1 Glaciers, permanent ice and snow","#fffeed",["3.1"]],["3.2 Alluvial deposits and moraines","#c1d3dd",["3.2.1","3.2.2"]],["3.3 Screes","#adbec8",["3.3"]],["3.4 Cliffs and exposed rocks","#9aaab3",["3.4"]],["4 Grasslands","#fce3ca",["4"]],["4.0 Re-seeded grasslands","#fc8c1d",["4.0","4.0.2","4.0.0.0.1","4.0.0.0.2","4.0.0.0.3","4.0.1"]],["4.1 Pioneer vegetation on rocky surfaces","#fc9b3a",["4.1"]],["4.2 Thermophilic dry grasslands","#fca957",["4.2.1","4.2.2","4.2.3","4.2.4"]],["4.3 Unfertilised mountain grasslands and pastures","#fcb873",["4.3.1","4.3.2","4.3.3","4.3.5","4.3.6","4.3.7"]],["4.4 Snowbed communities","#fc7e00",["4.4"]],["4.5 Fertilised grasslands","#fcc690",["4.5.1","4.5.2","4.5.3","4.5.4"]],["4.6 Grass fallow","#fcd5ad",["4.6"]],["5 Woodland edges, tall herb communities, shrubs","#f0f0d2",["5"]],["5.2 Forest clearings","#f0f082",["5.2"]],["5.3 Shrubs, bushes, hedges","#f0f000",["5.3.0.0","5.3","5.3.9"]],["5.4 Dry dwarf shrub heaths","#f0f050",["5.4","5.4.2"]],["6 Forests","#a5e862",["6"]],["6.0 Plantations and trees outside forest","#14640c",["6.0","STR6000.0","STR6000.1"]],["6.1 Swamp forests ","#8ed554",["6.1","6.1.1","6.1.2","6.1.3","6.1.4"]],["6.2 Beech forests","#78c246",["6.2","6.2.1","6.2.2","6.2.3","6.2.4","6.2.5"]],["6.3 Other deciduous forests","#62af39",["6.3","6.3.1","6.3.2","6.3.3","6.3.4","6.3.5","6.3.6","6.3.7","6.3.8","6.3.9"]],["6.4 Thermophilic pine forests","#4c9d2b",["6.4","6.4.1","6.4.2","6.4.3"]],["6.5 Bog forests","#348b1d",["6.5","6.5.1","6.5.2","6.5.3"]],["6.6 High-altitude coniferous forests","#18790e",["6.6","6.6.1","6.6.2","6.6.3","6.6.4","6.6.5"]],["7.1 Trampled and ruderal areas","#c89646",["7.1"]],["8.1 Tree nurseries, orchards, vineyards","#e673e4",["8.1","8.1.6","8.1.3","8.1.4","8.1.5","8.1.7"]],["8.2 Cropland","#ffa6fe",["8.2","8.2.3"]],["9 Built habitats","#a0a0a0",["9","9.0.1","9.0.2"]],["9.2 Buildings","#000000",["9.2","9.2.2","STR9221"]],["9.3 Transport routes","#505050",["9.3","9.3.2","9.3.3","9.3.4"]],["9.4 Sealed sports grounds, car parks, etc.","#696969",["9.4"]]],"validation":{"date":"2026-11-24","tiles":"HabitatMap_v1_2_20251211_2m","res":2.0,"n":117,"by_kind":{"input":{"n":3,"mean_abs":9.276434811069285e-05,"max_abs":0.0001782582661413734},"square 1 ha":{"n":38,"mean_abs":0.0002059927252845326,"max_abs":0.0019271724739137186},"square 10 ha":{"n":38,"mean_abs":0.00010381588970238758,"max_abs":0.0005144299098689409},"strip 15 m":{"n":38,"mean_abs":0.00044313427296254436,"max_abs":0.0020431039246441296}}},"ref":{"coef":{"1":{"name":"Urban-settlement","wb":0.264,"pl":0.361,"msa":0.3125,"model":"GLOBIO4","src":"GlobioWeb technical documentation (PBL 2023), Table 3.1; Schipper et al. 2020","note":""},"10":{"name":"Cropland","wb":0.452,"pl":0.156,"msa":0.304,"model":"GLOBIO4","src":"GlobioWeb technical documentation (PBL 2023), Table 3.1; Kok et al. 2022","note":"overall agriculture"},"11":{"name":"Cropland, intensive use","wb":0.401,"pl":0.149,"msa":0.275,"model":"GLOBIO4","src":"GlobioWeb technical documentation (PBL 2023), Table 3.1; Kok et al. 2022","note":""},"12":{"name":"Cropland, minimal use","wb":0.502,"pl":0.162,"msa":0.332,"model":"GLOBIO4","src":"GlobioWeb technical documentation (PBL 2023), Table 3.1; Kok et al. 2022","note":""},"13":{"name":"Mosaic cropland (>50%) / natural vegetation","wb":0.671,"pl":0.493,"msa":0.5820000000000001,"model":"GLOBIO4","src":"GlobioWeb technical documentation (PBL 2023), Table 3.1","note":"60% cropland plus 40% natural"},"14":{"name":"Mosaic natural vegetation (>50%) / cropland","wb":0.781,"pl":0.662,"msa":0.7215,"model":"GLOBIO4","src":"GlobioWeb technical documentation (PBL 2023), Table 3.1","note":"40% cropland plus 60% natural"},"20":{"name":"Grazing","wb":0.452,"pl":0.156,"msa":0.304,"model":"GLOBIO4","src":"GlobioWeb technical documentation (PBL 2023), Table 3.1; Kok et al. 2022","note":""},"21":{"name":"Intensive pastures","wb":0.401,"pl":0.149,"msa":0.275,"model":"GLOBIO4","src":"GlobioWeb technical documentation (PBL 2023), Table 3.1; Kok et al. 2022","note":""},"22":{"name":"Extensive rangelands","wb":0.502,"pl":0.162,"msa":0.332,"model":"GLOBIO4","src":"GlobioWeb technical documentation (PBL 2023), Table 3.1; Kok et al. 2022","note":""},"30":{"name":"Forestry","wb":0.589,"pl":0.259,"msa":0.424,"model":"GLOBIO4","src":"GlobioWeb technical documentation (PBL 2023), Table 3.1; Schipper et al. 2020","note":"plantation-type forestry"},"40":{"name":"Secondary vegetation","wb":0.621,"pl":0.568,"msa":0.5945,"model":"GLOBIO4","src":"GlobioWeb technical documentation (PBL 2023), Table 3.1; Schipper et al. 2020","note":""},"90":{"name":"Tree cover, natural (classes 50-90)","wb":1.0,"pl":1.0,"msa":1.0,"model":"GLOBIO4","src":"GlobioWeb technical documentation (PBL 2023), Table 3.1: natural classes 50-220 = 1","note":""},"120":{"name":"Shrubland","wb":1.0,"pl":1.0,"msa":1.0,"model":"GLOBIO4","src":"GlobioWeb technical documentation (PBL 2023), Table 3.1: natural classes 50-220 = 1","note":""},"130":{"name":"Natural grassland","wb":1.0,"pl":1.0,"msa":1.0,"model":"GLOBIO4","src":"GlobioWeb technical documentation (PBL 2023), Table 3.1: natural classes 50-220 = 1","note":""},"160":{"name":"Tree cover, flooded","wb":1.0,"pl":1.0,"msa":1.0,"model":"GLOBIO4","src":"GlobioWeb technical documentation (PBL 2023), Table 3.1: natural classes 50-220 = 1","note":""},"180":{"name":"Shrub or herbaceous cover, flooded","wb":1.0,"pl":1.0,"msa":1.0,"model":"GLOBIO4","src":"GlobioWeb technical documentation (PBL 2023), Table 3.1: natural classes 50-220 = 1","note":""},"201":{"name":"Consolidated bare areas","wb":1.0,"pl":1.0,"msa":1.0,"model":"GLOBIO4","src":"GlobioWeb technical documentation (PBL 2023), Table 3.1: natural classes 50-220 = 1","note":""},"202":{"name":"Unconsolidated bare areas","wb":1.0,"pl":1.0,"msa":1.0,"model":"GLOBIO4","src":"GlobioWeb technical documentation (PBL 2023), Table 3.1: natural classes 50-220 = 1","note":""},"210":{"name":"Water bodies","wb":null,"pl":null,"msa":null,"model":"GLOBIO4","src":"GLOBIO4 terrestrial MSA excludes water (aquatic module separate)","note":"not part of the terrestrial area"},"220":{"name":"Permanent snow and ice","wb":1.0,"pl":1.0,"msa":1.0,"model":"GLOBIO4","src":"GlobioWeb technical documentation (PBL 2023), Table 3.1: natural classes 50-220 = 1","note":""},"G35_URB":{"name":"Urban, dense, no green space (GLOBIO 3.5)","wb":0.05,"pl":0.05,"msa":0.05,"model":"GLOBIO 3.5","src":"PBL (2016) The GLOBIO model, technical description of version 3.5, Table 2.2","note":"conservative variant only: sealed surfaces"},"G35_SEL":{"name":"Forest, selective logging (GLOBIO 3.5)","wb":0.7,"pl":0.7,"msa":0.7,"model":"GLOBIO 3.5","src":"PBL (2016) The GLOBIO model, technical description of version 3.5, Table 2.2","note":"conservative variant only: managed near-natural forest"}},"mapping":[{"t":"1","name":"Water bodies (Gewässer)","terr":false,"c":"210","k":"210","wc":"Open water: not part of terrestrial MSA (GLOBIO aquatic module)","wk":"same"},{"t":"1.1","name":"Standing fresh water (Stehende Gewässer)","terr":false,"c":"210","k":"210","wc":"Open water: not part of terrestrial MSA","wk":"same"},{"t":"1.2","name":"Running water (Fliessgewässer)","terr":false,"c":"210","k":"210","wc":"Open water: not part of terrestrial MSA","wk":"same"},{"t":"2","name":"Banks, shores and wetlands (Ufer und der Feuchtgebiete)","terr":true,"c":"180","k":"180","wc":"Shore or wetland vegetation without further class: natural flooded herbaceous cover","wk":"same"},{"t":"2.0","name":"Artificial banks (Künstliche Ufer)","terr":true,"c":"1","k":"G35_URB","wc":"Artificial banks are built structures: urban class","wk":"Sealed surface: GLOBIO 3.5 dense urban 0.05"},{"t":"2.1","name":"Bank and shore vegetation (Ufer mit Vegetation)","terr":true,"c":"180","k":"180","wc":"Reed beds and shore vegetation: natural flooded herbaceous cover","wk":"same"},{"t":"2.2","name":"Fens and transition mires (Flachmoore)","terr":true,"c":"180","k":"22","wc":"Fen plant communities: natural flooded herbaceous cover","wk":"Fens kept open by litter mowing: extensive use (rangeland class)"},{"t":"2.3","name":"Wet meadows (Feuchtwiesen)","terr":true,"c":"180","k":"22","wc":"Wet meadow plant communities: natural flooded herbaceous cover","wk":"Mown wet meadows: extensive use (rangeland class)"},{"t":"2.3.2","name":"Nutrient-rich wet meadow, marsh-marigold meadow/wet tall-herb stand, meadowsweet (Nährstoffreiche Feuchtwiesen (Sumpfdotterblumenwiese)/Feuchte Hochstaudenflur (Spierstaudenflur))","terr":true,"c":"22","k":"21","wc":"Fertilised wet meadow (Calthion): extensive agricultural use","wk":"Regularly fertilised and mown: intensive pasture class"},{"t":"2.3.3","name":"Wet tall-herb stand, meadowsweet (Feuchte Hochstaudenflur (Spierstaudenflur))","terr":true,"c":"180","k":"40","wc":"Tall-herb wet vegetation (Filipendulion): natural","wk":"Often fallow wet meadows: secondary vegetation"},{"t":"2.4","name":"Raised bogs (Hochmoore)","terr":true,"c":"180","k":"180","wc":"Raised bogs: natural","wk":"same"},{"t":"2.5","name":"Seasonally wet pioneer vegetation (Wechselfeuchte Pionierfluren)","terr":true,"c":"180","k":"180","wc":"Seasonally flooded pioneer vegetation: natural","wk":"same"},{"t":"3","name":"Glaciers, rocks, screes and gravel (Gletscher, Fels, Schutt und Geröll)","terr":true,"c":"201","k":"201","wc":"Rock and scree: natural bare","wk":"same"},{"t":"3.1","name":"Glaciers, permanent ice and snow (Gletscher, Firn- und Schneefleder)","terr":true,"c":"220","k":"220","wc":"Permanent snow and ice: natural","wk":"same"},{"t":"3.2","name":"Alluvial deposits and moraines (Alluvionen und Moränen)","terr":true,"c":"202","k":"202","wc":"Unconsolidated bare: natural","wk":"same"},{"t":"3.3","name":"Screes (Steinschutt- und Geröllfluren)","terr":true,"c":"202","k":"202","wc":"Scree: natural","wk":"same"},{"t":"3.4","name":"Cliffs and exposed rocks (Felsen)","terr":true,"c":"201","k":"201","wc":"Rock: natural","wk":"same"},{"t":"4","name":"Grasslands (Grünland (Naturrasen, Wiesen und Weiden))","terr":true,"c":"20","k":"21","wc":"Grassland without further class: GLOBIO grazing (general)","wk":"Assumed intensive: intensive pasture"},{"t":"4.0","name":"Re-seeded grasslands (Kunstrasen)","terr":true,"c":"21","k":"21","wc":"Sown or artificial lawns (incl. sports turf): intensive pasture class","wk":"same"},{"t":"4.1","name":"Pioneer vegetation on rocky surfaces (Pionierfluren auf Felsböden (Felsgrusfluren))","terr":true,"c":"130","k":"130","wc":"Pioneer swards on rock: natural grassland","wk":"same"},{"t":"4.2","name":"Thermophilic dry grasslands (Wärmeliebende Trockenrasen)","terr":true,"c":"130","k":"22","wc":"Dry grassland plant communities: natural grassland","wk":"Mown or grazed semi-natural grassland: extensive rangeland"},{"t":"4.3","name":"Unfertilised mountain grasslands and pastures (Gebirgs-Magerrasen)","terr":true,"c":"130","k":"22","wc":"Alpine grassland communities: natural grassland","wk":"Alpine pastures with grazing: extensive rangeland"},{"t":"4.4","name":"Snowbed communities (Schneetälchen)","terr":true,"c":"130","k":"130","wc":"Snowbed vegetation: natural","wk":"same"},{"t":"4.5","name":"Fertilised grasslands (Fettwiesen und -weiden)","terr":true,"c":"20","k":"21","wc":"Fertilised meadows and pastures: GLOBIO grazing (general)","wk":"Intensive pasture"},{"t":"4.5.2","name":"Montane hay meadow, golden oat-grass (Bergfettwiese (Goldhaferwiese))","terr":true,"c":"22","k":"20","wc":"Mountain hay meadow (Polygono-Trisetion): moderate use","wk":"GLOBIO grazing (general)"},{"t":"4.5.3","name":"Lowland pasture, crested dog's-tail (Talfettweide (Kammgrasweide))","terr":true,"c":"21","k":"21","wc":"Fertilised pasture (Cynosurion): intensive pasture","wk":"same"},{"t":"4.6","name":"Grass fallow (Grasbrachen)","terr":true,"c":"40","k":"40","wc":"Grass fallow: secondary vegetation","wk":"same"},{"t":"5","name":"Woodland edges, tall herb communities, shrubs (Krautsäume, Hochstaudenfluren und Gebüsche)","terr":true,"c":"120","k":"40","wc":"Fringes and scrub: natural shrubland","wk":"Planted or managed scrub: secondary vegetation"},{"t":"5.1","name":"Herbaceous fringes (Krautsäume)","terr":true,"c":"120","k":"40","wc":"Herbaceous fringes: natural","wk":"Secondary vegetation"},{"t":"5.2","name":"Forest clearings (Hochstauden- und Schlagfluren)","terr":true,"c":"120","k":"40","wc":"Tall-herb and clearing vegetation: natural dynamics","wk":"Secondary vegetation after cutting"},{"t":"5.3","name":"Shrubs, bushes, hedges (Gebüsche)","terr":true,"c":"120","k":"40","wc":"Hedges, thickets, forest edges: natural shrubland","wk":"Planted or cut hedges: secondary vegetation"},{"t":"5.4","name":"Dry dwarf shrub heaths (Zwergstrauchheiden)","terr":true,"c":"120","k":"120","wc":"Dwarf shrub heaths: natural","wk":"same"},{"t":"6","name":"Forests (Wälder)","terr":true,"c":"90","k":"G35_SEL","wc":"Forest plant communities: natural tree cover","wk":"Managed near-natural forest: GLOBIO 3.5 selective logging 0.70"},{"t":"6.0","name":"Plantations and trees outside forest (Einzelbäume und Forstpflanzungen)","terr":true,"c":"30","k":"30","wc":"Plantations: GLOBIO forestry","wk":"same"},{"t":"6.1","name":"Swamp forests (Bruch- und Auenwälder)","terr":true,"c":"160","k":"G35_SEL","wc":"Alluvial and swamp forest: natural flooded tree cover","wk":"Managed forest: GLOBIO 3.5 selective logging 0.70"},{"t":"6.2","name":"Beech forests (Buchenwälder)","terr":true,"c":"90","k":"G35_SEL","wc":"Beech forest communities: natural tree cover","wk":"Managed forest: GLOBIO 3.5 selective logging 0.70"},{"t":"6.3","name":"Other deciduous forests (Andere Laubwälder)","terr":true,"c":"90","k":"G35_SEL","wc":"Other broadleaf forest communities: natural tree cover","wk":"Managed forest: GLOBIO 3.5 selective logging 0.70"},{"t":"6.4","name":"Thermophilic pine forests (Wärmeliebende Föhrenwälder)","terr":true,"c":"90","k":"G35_SEL","wc":"Thermophilous pine forest: natural tree cover","wk":"Managed forest: GLOBIO 3.5 selective logging 0.70"},{"t":"6.5","name":"Bog forests (Hochmoorwälder)","terr":true,"c":"160","k":"160","wc":"Bog forest: natural flooded tree cover","wk":"same"},{"t":"6.6","name":"High-altitude coniferous forests (Gebirgsnadelwälder)","terr":true,"c":"90","k":"G35_SEL","wc":"Montane conifer forest communities: natural tree cover","wk":"Managed forest: GLOBIO 3.5 selective logging 0.70"},{"t":"7","name":"Pioneer vegetation of disturbed sites, ruderal sites (Pioniervegetation gestörter Plätze (Ruderalstandorte))","terr":true,"c":"40","k":"1","wc":"Ruderal vegetation: secondary vegetation","wk":"Strongly disturbed sites: urban class"},{"t":"7.1","name":"Trampled and ruderal areas (Trittrasen und Ruderalfluren)","terr":true,"c":"40","k":"1","wc":"Trampled and ruderal vegetation: secondary vegetation","wk":"Strongly disturbed sites: urban class"},{"t":"7.2","name":"Anthropogenic stony habitats (Anthropogene Steinfluren)","terr":true,"c":"1","k":"G35_URB","wc":"Walls, gravel surfaces: urban class","wk":"Sealed or near-sealed: GLOBIO 3.5 dense urban 0.05"},{"t":"8","name":"Plantations, fields and crops (Pflanzungen, Äcker und Kulturen)","terr":true,"c":"10","k":"11","wc":"Crops: GLOBIO cropland (general)","wk":"Intensive cropland"},{"t":"8.1","name":"Tree nurseries, orchards, vineyards (Baumschulen, Obstgärten, Rebberge)","terr":true,"c":"10","k":"11","wc":"Orchards and vineyards: GLOBIO cropland (general)","wk":"Intensive cropland"},{"t":"8.2","name":"Cropland (Feldkulturen (Äcker))","terr":true,"c":"10","k":"11","wc":"Arable fields: GLOBIO cropland (general)","wk":"Intensive cropland"},{"t":"9","name":"Built habitats (Bauten, Anlagen)","terr":true,"c":"1","k":"G35_URB","wc":"Built-up: GLOBIO4 urban","wk":"Sealed: GLOBIO 3.5 dense urban 0.05"},{"t":"9.0","name":"Siedlungsflächen (Name gemäss TypoCH-Tabelle)","terr":true,"c":"1","k":"1","wc":"Settlement area: GLOBIO4 urban","wk":"Not necessarily sealed: GLOBIO4 urban kept"},{"t":"9.1","name":"Storage sites, landfills (Lagerplätze, Deponien)","terr":true,"c":"1","k":"G35_URB","wc":"Dumps and storage: urban","wk":"Sealed or compacted: GLOBIO 3.5 dense urban 0.05"},{"t":"9.2","name":"Buildings (Bauten)","terr":true,"c":"1","k":"G35_URB","wc":"Buildings: urban","wk":"Sealed: GLOBIO 3.5 dense urban 0.05"},{"t":"9.3","name":"Transport routes (Verkehrswege)","terr":true,"c":"1","k":"G35_URB","wc":"Roads and railways: urban","wk":"Sealed: GLOBIO 3.5 dense urban 0.05"},{"t":"9.4","name":"Sealed sports grounds, car parks, etc. (Versiegeleter Sportplatz, Parkplatz etc.)","terr":true,"c":"1","k":"G35_URB","wc":"Sealed sports and parking areas: urban","wk":"Sealed: GLOBIO 3.5 dense urban 0.05"}],"names":{"6.6.3":"Larch-stone pine forest (Lärchen-Arvenwald)","7.1.4":"Annual ruderal vegetation (Einjährige Ruderalflur)","4.0.0.0.2":"Lawn, moderately dynamic (Rasen, mittel dynamisch)","3.2.2.0":"Moraine without vegetation (Moräne ohne Vegetation)","8.2.1.0":"Cereals without accompanying vegetation (Getreide ohne Begleitvegetation)","6.4.3.2":"Base-poor steppe pine forest (Kalkarmer Steppen-Föhrenwald)","9.2":"Buildings (Bauten)","5.3.8":"Montane willow scrub (Gebirgs-Weidengebüsch)","2.2.1.2":"Great fen-sedge stand (Schneidbinsenried)","6.4.3.1":"Base-rich steppe pine forest (Kalkreicher Steppen-Föhrenwald)","3.3.2.2":"Alpine siliceous scree vegetation (Alpine Silikatschuttflur)","3.2":"Alluvial deposits and moraines (Alluvionen und Moränen)","2.5.0":"Seasonally wet pioneer sites without vegetation (Wechselfeuchte Pionierfluren ohne Vegetation)","6.2.2":"Woodrush beech forest (Hainsimsen-Buchenwald)","4.2.1":"Thermophilous dry grassland, continental climate; central Valais, Graubünden (Wärmeliebende Trockenrasen (Kontinentales Klima; Innerwallis, Graubünden))","2.0.1":"Artificial banks with vegetation (Künstliche Ufer mit Vegetation)","4.3.4":"Wind-edge grassland, Elyna (Windkantenrasen (Nacktriedrasen))","3":"Glaciers, rocks, screes and gravel (Gletscher, Fels, Schutt und Geröll)","5.3.0":"Planted shrubs, far from natural (Naturferne Pflanzung)","6.3c":"Thermophilous secondary forests (Wärmeliebende Sekundärwälder)","8.2.3.3":"Base-poor dry root-crop field (Kalkarmer, trockener Hackfruchtacker)","2.5.1.3":"Annual vegetation of moist soils with dwarf herbs (Annuellenflur feuchter Böden mit Zwergkräutern)","4.0.0.0.1":"Lawn, dynamic (Rasen, dynamisch)","7.1.8":"Lowland livestock resting area (Lägerflur der Tieflagen)","4.2.4":"Central European semi-dry grassland (Mitteleuropäischer Halbtrockenrasen)","4.1.3":"Thermophilous siliceous rock pioneer vegetation (Wärmeliebende Silikatfels-Pionierflur)","5.2.5":"Bracken stand (Adlerfarnflur)","5.3.0.1":"Planted shrubs, deciduous species (Naturferne Pflanzung mit sommergrünen Arten)","2.3.2":"Nutrient-rich wet meadow, marsh-marigold meadow/wet tall-herb stand, meadowsweet (Nährstoffreiche Feuchtwiesen (Sumpfdotterblumenwiese)/Feuchte Hochstaudenflur (Spierstaudenflur))","6.4":"Thermophilic pine forests (Wärmeliebende Föhrenwälder)","1.2.1.1":"Wide lowland river (Breites Fliessgewässer des Flachlands)","6.3.4":"Downy oak forest (Flaumeichenwald)","5.3.3":"Mesophilous scrub (Mesophiles Gebüsch)","4.4.2":"Base-poor snowbed (Kalkarmes Schneetälchen)","4.2.1.2":"Continental semi-dry grassland (Kontinentaler Halbtrockenrasen)","9.2.1.4":"Apartment or commercial building (Mietgebäude, Gewerbegebäude)","8.1.4":"High-stem orchard (Hochstammobstgarten)","1.2.5":"Temporary watercourse (Temporärer Wasserlauf)","6.1":"Swamp forests (Bruch- und Auenwälder)","2.4.1":"Open raised bog (Offene Hochmoore)","4.0":"Re-seeded grasslands (Kunstrasen)","1.2.2.0":"Grayling zone without vegetation (Äschenregion ohne Vegetation)","9.2.2":"Animal housing, greenhouses (Tierstallungen, Gewächshäuser)","2.3.3":"Wet tall-herb stand, meadowsweet (Feuchte Hochstaudenflur (Spierstaudenflur))","8.2.2":"Maize, tobacco and other arable crops, mainly summer crops (Mais-, Tabak- und andere Ackerkulturen (vorwiegend Sommerkultur))","3.4":"Cliffs and exposed rocks (Felsen)","5.3.7":"Fen willow scrub (Moor-Weidengebüsch)","4.3.5":"Mat-grass grassland (Borstgrasrasen)","4.5.1.3":"Dry false oat-grass meadow (Trockene Fromentalwiese)","5.2.2":"Base-poor forest clearing (Kalkarme Schlagflur)","6.6.5":"Mountain pine forest (Bergföhrenwald)","4.3.6.2":"Violet-fescue grassland (Violettschwingelrasen)","4.5.3":"Lowland pasture, crested dog's-tail (Talfettweide (Kammgrasweide))","3.4.2.3":"Serpentine rock vegetation (Serpentingesteinsflur)","9.2.3":"Outbuilding, shed, garage (Nebengebäude, Halle, Garage)","9.2.1.3":"Detached house (Einfamilienhaus)","3.2.1.1":"Alluvial deposit with herbaceous pioneer vegetation (Alluvion mit krautiger Pioniervegetation)","9.2.4":"Factory, hall, warehouse (Fabrik, Halle, Lagerhaus)","2.5.1":"Annual mud vegetation, dwarf-rush (Einjährige Schlammflur (Zwergbinsenflur))","6.6.4":"Larch forest (Lärchenwald)","2.5.1.2":"Dwarf-rush annual vegetation with sedge-like Cyperus (Zwergbinsen-Annuellenflur mit Zypergräsern)","6.0.2":"Conifer plantation (Aufforstung mit Nadelgehölzen)","6.2.3.1":"Atlantic beech forest (Atlantischer Buchenwald)","8.2.3.1":"Base-poor loamy root-crop field (Kalkarmer, lehmiger Hackfruchtacker)","8.2.1.2":"Base-rich cereal fields (Kalkreiche Getreideäcker)","1.4.2":"Fissure groundwater (Kluftgrundwasser)","4.0.1":"Sown ley on arable land (Kunstwiese auf Fruchtfolgefläche)","6.4.2":"Subcontinental base-rich pine forest (Subkontinentaler kalkreicher Föhrenwald)","8.2":"Cropland (Feldkulturen (Äcker))","3.4.2.2":"Siliceous rock vegetation (Silikatfelsflur)","4.3.6":"Variegated-fescue slope (Buntschwingelhalde)","4.2.3":"Insubrian dry grassland (Insubrischer Trockenrasen)","3.3.1.2":"Alpine limestone scree vegetation (Alpine Kalkschuttflur)","4.2":"Thermophilic dry grasslands (Wärmeliebende Trockenrasen)","2.5":"Seasonally wet pioneer vegetation (Wechselfeuchte Pionierfluren)","4":"Grasslands (Grünland (Naturrasen, Wiesen und Weiden))","4.6.4":"Purple moor-grass fallow (Pfeifengrasbrache)","8":"Plantations, fields and crops (Pflanzungen, Äcker und Kulturen)","3.4.1":"Limestone rock (Kalkfels)","3.3.2.3":"Dry, warm siliceous scree vegetation (Trockenwarme Silikatschuttflur)","8.2.3.0":"Root crops without accompanying flora (Hackfrucht ohne Begleitflora)","3.5.1":"Small crevices, rock shelters, endogean fauna (Kleine Felsspalten, Halbhöhlen: endogäische Fauna (\"Fauna der Steinunterseite\"\")\")","9.2.5.2":"Church (Kriche)","1.1.4.2":"Water-violet communities (Wasserfedergesellschaft)","2.2.1":"Tall-sedge fen (Grossseggenried)","6.3.5":"Hop-hornbeam forest (Hopfenbuchenwald)","1.4.4":"Cave lake (Höhlensee)","6.3":"Other deciduous forests (Andere Laubwälder)","2.1.3":"Shoreweed communities (Strandlingsgesellschaften)","3.3":"Screes (Steinschutt- und Geröllfluren)","2.2.1.1":"Tall-sedge fen, s.str. (Grossseggenried)","4.6.1":"Couch-grass fallow (Queckenbrache)","8.2.3.4":"Base-rich dry root-crop field (Kalkreicher, trockener Hackfruchtacker)","9.2.2.3":"Henhouse (Hühnerstall)","1.4":"Groundwater habitats (Unterirdische Gewässer)","1.1.1.2":"Fountain (Brunnen)","9.3.2.3":"Path without vegetation, concrete, gravel (Weg ohne Vegetation (Beton, Kies))","4.1.2":"Montane limestone pavement vegetation, karst (Kalkfels-Pionierflur des Gebirges (Karstfluren))","4.6.3":"False oat-grass fallow (Fromentalbrache)","6.3b":"Oak forests (Eichenwälder)","3.4.2":"Siliceous or serpentine rock (Silikat- oder Serpentinfelsen)","6.3.7":"Chestnut forest (Kastanienwald)","9.2.1.1":"Farmhouse (Bauernhaus)","5.1.2":"Mesophilous herbaceous fringe (Mesophiler Krautsaum)","3.5.4":"Guano deposit (Guanohaufen)","1":"Water bodies (Gewässer)","6.2.3":"Woodruff beech forest (Waldmeister-Buchenwald)","9.2.3.1":"Barn, shed (Scheune, Schopf)","9.3.3.2":"Skid trail (Holzerweg)","2.1":"Bank and shore vegetation (Ufer mit Vegetation)","3.4.1.1":"Limestone rock without vascular plants (Kalkfels ohne Gefässpflanzen)","7.2.0":"Wall or paving without vegetation (Mauer oder Steinpflästerung ohne Vegetation)","6.5.2":"Bog mountain-pine forest (Hochmoor-Bergföhrenwald)","4.4":"Snowbed communities (Schneetälchen)","5.3.2":"Dry, warm scrub (Trockenwarmes Gebüsch)","9.2.5.3":"Railway station (Bahnhof)","2.1.2.2":"Riverbank and terrestrial reed bed (Flussufer- und Landröhricht)","3.3.2":"Siliceous scree (Silikatschutt)","7.2.1":"Dry, warm wall vegetation (Trockenwarme Mauerflur)","6.6.1":"Fir-spruce forest (Tannen-Fichtenwald)","8.1.5":"Low-stem orchard (Niederstammobstgarten)","2.1.2":"Reed beds (Röhricht)","7.1":"Trampled and ruderal areas (Trittrasen und Ruderalfluren)","5.4.1.1":"Sub-Atlantic heath on peat (Subatlantsiche Heide auf Torf)","9.2.1":"Inhabited building (Bewohntes Gebäude)","1.1.4.1":"Water-crowfoot communities (Wasserhahnenfussgesellschaft)","6.6.5.2":"Base-rich mountain pine forest (Kalkreicher Bergföhrenwald)","7.2.2":"Paving joint vegetation (Steinpflaster-Trittflur)","4.5.1.4":"Moist meadow foxtail meadow (Feuchte Fuchschwanzwiese)","9.1.2":"Landfill, organic waste (Deponie (organische Abfälle))","6.1.4":"Hardwood alluvial forest (Hartholz-Auenwald)","6.4.2.1":"Central European subcontinental base-rich pine forest, broom pine forest (Mitteleuropäischer subkontinentaler kalkreicher Föhrenwald (Geissklee-Föhrenwald))","6.1.2":"Softwood alluvial forest (Weichholz-Auenwald)","5.3.0.2":"Planted shrubs, evergreen species (Naturferne Pflanzung mit immergrünen Arten)","4.1.4":"Montane siliceous rock pioneer vegetation (Silikat-Pionierflur des Gebirges)","5.2":"Forest clearings (Hochstauden- und Schlagfluren)","9.0.1":"Unsealed bare surface without recognisable use (Unversiegelte vegetationslose Fläche ohne erkennbare Nutzung)","5.3.0.0":"Shrubs (Gebüsche)","9.2.3.3":"Boathouse (Bootshaus)","4.3":"Unfertilised mountain grasslands and pastures (Gebirgs-Magerrasen)","1.2":"Running water (Fliessgewässer)","7.1.3":"Subalpine-alpine trampled vegetation (Subalpin-alpine Trittflur)","6.6":"High-altitude coniferous forests (Gebirgsnadelwälder)","9.0":"Siedlungsflächen (Name gemäss TypoCH-Tabelle)","5":"Woodland edges, tall herb communities, shrubs (Krautsäume, Hochstaudenfluren und Gebüsche)","5.4.4":"Dry subalpine dwarf-shrub heath, dwarf juniper (Trockene subalpine Zwergstrauchheide (Zwergwacholderheide))","1.2.3":"Lower trout zone, metarhithron (Untere Forellenregion (Metarhithron))","6.4.4":"Base-poor pine forest (Kalkarmer Föhrenwald)","4.2.1.1":"Inner-alpine rock steppe (Inneralpine Felsensteppe)","8.1":"Tree nurseries, orchards, vineyards (Baumschulen, Obstgärten, Rebberge)","9.3.3.3":"Footpath (Pfad)","8.1.6":"Vineyard (Rebberg)","4.4.1":"Base-rich snowbed (Kalkreiches Schneetälchen)","6.3.2":"Lime mixed forest (Linden-Mischwald)","4.6":"Grass fallow (Grasbrachen)","4.5.2":"Montane hay meadow, golden oat-grass (Bergfettwiese (Goldhaferwiese))","6000.1":"Single tree, complex structure (Einzelbaum, komplexe Struktur)","5.3.6":"Alluvial willow scrub (Auen-Weidengebüsch)","2.2.2":"Base-poor small-sedge fen, brown-sedge fen (Kalkarmes Kleinseggenried (Braunseggenried))","6.3.6":"Acidic mixed oak forest (Saurer Eichenmischwald)","3.5.7":"Underground rock face (Unterirdische Felswand)","5.1.1":"Dry, warm herbaceous fringe (Trockenwarmer Krautsaum)","8.1.1":"Broadleaf tree nursery (Baumschule aus Laubgehölzen)","1.1.4":"Floating-leaved vegetation (Schwimmblattgesellschaft)","9.2.4.6":"Sawmill, joinery (Sägerei, Schreinerei)","4.0.4":"Re-greening at high altitude, ski runs, etc. (Begrünung in Hochlagen (Skipisten, etc.))","9.3.4":"Railway track (Bahngleis)","5.4.1":"Sub-Atlantic dwarf-shrub heath, broom heath (Subatlantische Zwergstrauchheide (Ginsterheide))","7.2":"Anthropogenic stony habitats (Anthropogene Steinfluren)","3.1.4":"Snow field, spring (Schneefeld (Frühling))","1.2.1.2":"Slow-flowing lowland stream (Langsam fliessender Bach im Flachland)","2.1.4":"Stream-bank reed vegetation (Bachröhricht)","6.2.1":"Orchid beech forest (Orchideen-Buchenwald)","6.4.3":"Continental steppe pine forest (Kontinentaler Steppen-Föhrenwald)","4.0.0.0.3":"Lawn, not dynamic (Rasen, nicht dynamisch)","2.3.1":"Purple moor-grass meadow (Pfeifengraswiese)","5.2.1":"Base-rich forest clearing (Kalkreiche Schlagflur)","3.4.1.2":"Dry limestone rock vegetation (Trockene Kalkfelsflur)","9.1.1":"Landfill, bulky waste (Deponie (Sperrgut))","2.5.1.1":"Dwarf-rush annual vegetation with spike-rushes (Zwergbinsen-Annuellenflur mit Sumpfbinsen)","1.4.1":"Porous groundwater (Porengrundwasser)","1.3.1":"Thermophilous spring vegetation (Wärmeliebende Quellflur)","4.3.2":"Cushion-sedge grassland/wind-edge grassland, Elyna (Polsterseggenrasen/Windkantenrasen (Nacktriedrasen))","1.1.3":"Duckweed communities (Wasserlinsengesellschaften)","6.1.1":"Alder carr (Erlen-Bruchwald)","4.6.2":"Tor-grass fallow (Fiederzwenckenbrache)","9.2.5":"Public building, monument (Öffentliches Gebäude, Denkmal)","2.2":"Fens and transition mires (Flachmoore)","3.2.1":"Alluvial deposit (Alluvion (Schwemmland))","5.3":"Shrubs, bushes, hedges (Gebüsche)","9":"Built habitats (Bauten, Anlagen)","5.1.3":"Moist herbaceous fringe, lowlands (Feuchter Krautsaum (Tieflagen))","4.5.1":"Lowland hay meadow, false oat-grass (Talfettwiesen (Fromentalwiese))","2.2.4":"Transition mire (Übergangsmoor)","9.3":"Transport routes (Verkehrswege)","4.3.3":"Rusty-sedge slope (Rostseggenhalde)","6.5.1":"Bog birch forest (Hochmoor-Birkenwald)","3.2.2.1":"Moraine with pioneer vegetation (Moräne mit Pioniervegetation)","6.0":"Plantations and trees outside forest (Einzelbäume und Forstpflanzungen)","5.4.5":"Mesophilous subalpine dwarf-shrub heath, alpenrose (Mesophile subalpine Zwergstrauchheide (Alpenrosenheide))","6":"Forests (Wälder)","4.5.4":"Montane pasture, alpine meadow-grass (Bergfettweide (Milchkrautweide))","3.5.6":"Underground clay deposit (Unterirdische Lehmablagerung)","6.3.1":"Maple ravine forest (Ahorn-Schluchtwald)","9.2.4.3":"Power plant (Elektrisches Kraftwerk)","1.1.3.2":"Bladderwort communities (Wasserschlauchgesellschaften)","4.1.1":"Thermophilous limestone pavement vegetation (Wärmeliebende Kalkfels-Pionierflur)","1.2.1":"Bream and barbel zone, epipotamon (Brachsmen- und Barbenregion (Epipotamon))","4.3.1.2":"Blue moor-grass slope of the southern limestone Alps (Blaugrashalde der südlichen Kalkalpen)","1.1.0.2":"Shallow water, littoral, incl. ponds (Seichtes Gewässer (Litoral, inkl. Tümpel))","3.3.2.1":"Siliceous scree without vascular plants (Silikatschutthalde ohne Gefässpflanzen)","4.5.1.2":"Typical false oat-grass meadow (Typische Fromentalwiese)","9.2.4.1":"Factory (Fabrik)","9.2.2.2":"Pigsty (Schweinestall)","3.3.1.3":"Alpine calcareous-schist scree vegetation (Alpine Kalkschieferflur)","8.1.2":"Conifer tree nursery (Baumschule aus Nadelgehölzen)","8.1.3":"Chestnut grove, without understorey (Kastanienhain (ohne Unterholz))","9.2.4.5":"Refinery (Raffinerie)","3.1.3":"Firn field, summer (Firnfeld (Sommer))","9.0.2":"Sealed bare surface without recognisable use (Versiegelte vegetationslose Fläche ohne erkennbare Nutzung)","7.1.5":"Dry, warm ruderal vegetation (Trockenwarme Ruderalflur)","1.2.2.1":"Grayling zone with vegetation (Äschenregion mit Vegetation)","9.2.3.4":"Bunker","3.5.5":"Artificial cavity, mines, tunnels, etc. (Künstliche Höhlung (Minen, Tunnel, etc.))","6.3a":"Ravine forests (Schluchtwälder)","1.3.2":"Calcareous spring vegetation (Kalkreiche Quellflur)","2.5.2":"Perennial mud vegetation, bur-marigold (Mehrjährige Schlammflur (Zweizahnflur))","6.3.3":"Oak-hornbeam forest (Eichen- Hainbuchenwald)","3.1":"Glaciers, permanent ice and snow (Gletscher, Firn- und Schneefleder)","8.1.7":"Berry crops (Beerenkultur)","1.3.0":"Trickling surface, spring without vegetation (Überrieselte Fläche, Quelle ohne Vegetation)","5.4.2":"Continental dwarf-shrub heath, savin juniper (Kontinentale Zwergstrauchheide (Sefistrauchheide))","8.2.1.1":"Base-poor cereal fields (Kalkarme Getreideäcker)","6.2.5":"Fir-beech forest (Tannen-Buchenwald)","7":"Pioneer vegetation of disturbed sites, ruderal sites (Pioniervegetation gestörter Plätze (Ruderalstandorte))","6.4.1":"Moor-grass pine forest (Pfeifengras-Föhrenwald)","9.1":"Storage sites, landfills (Lagerplätze, Deponien)","6.1.3":"Grey alder alluvial forest (Grauerlen-Auenwald)","6.3.9":"Black locust forest (Robinienwald)","4.6.5":"Small-reed fallow (Reitgrasbrache)","6.1.3.1":"Alpine willow alluvial forest (Alpen-Weidenauenwald)","9.2.3.5":"Mountain hut, forester's house (Berghütte, Forsthaus)","5.1.0":"Atypical fringe community (Atypsiche Saumgesellschaft)","8.2.0":"Cropland (Feldkulturen (Äcker))","6.2.4":"Coralroot beech forest (Zahnwurz-Buchenwald)","9.2.5.4":"Hospital (Spital)","9.2.3.2":"Garage","9.2.5.1":"Castle (Schloss)","1.3":"Springs and spring fens (Quellen und Quellfluren)","8.2.3":"Root crops, summer crops, garden (Hackfruchtacker (Sommerkultur), Garten)","1.1.0.1":"Deep water, open-water zone (Tiefgründiges Gewässer (Freiwasserzone))","5.4":"Dry dwarf shrub heaths (Zwergstrauchheiden)","5.1":"Herbaceous fringes (Krautsäume)","5.3.1":"Broom scrub (Besenginster-Gebüsche)","6.5":"Bog forests (Hochmoorwälder)","9.2.4.4":"Nuclear power plant (Atomkraftwerk)","1.1":"Standing fresh water (Stehende Gewässer)","4.3.1":"Blue moor-grass slope (Blaugrashalde)","7.1.6":"Mesophilous ruderal vegetation, sweet clover (Mesophile Ruderalflur (Steinkleeflur))","2.3":"Wet meadows (Feuchtwiesen)","4.0.2":"Lawn on sports grounds, in settlements, etc. (Kunstrasen auf Sportplätzen, im Siedlungsraum, etc.)","4.5.1.1":"Cock's-foot meadow (Knaulgraswiesen)","9.3.3":"Unpaved road, path (Naturstrasse, Weg)","7.1.0":"Trampled areas and rubble without vegetation (Tritt- und Trümmerflächen ohne Vegetation)","1.1.0":"Standing water without vegetation (Stehendes Gewässer ohne Vegetation)","4.1":"Pioneer vegetation on rocky surfaces (Pionierfluren auf Felsböden (Felsgrusfluren))","1.1.1":"Stonewort communities (Armleuchteralgengesellschaft)","9.2.4.2":"Warehouse (Lagerhaus)","5.2.3":"Montane tall-grass stand (Hochgrasflur des Gebirges)","6.6.5.1":"Base-poor mountain pine forest (Kalkarmer Bergföhrenwald)","3.3.1.4":"Fine-soil limestone scree vegetation (Feinerdereiche Kalkschuttflur)","3.5.2":"Animal burrow (Bau von Tieren)","3.2.1.0":"Alluvial deposit without vegetation (Alluvion ohne Vegetation)","3.5.3":"Cave entrance (Höhleneingang)","9.2.2.1":"Cattle and horse stable (Kuh- und Pferdestall)","4.5":"Fertilised grasslands (Fettwiesen und -weiden)","1.2.0.5":"Rivulet (Rinnsal)","2.2.5":"Pioneer vegetation of alpine torrent banks (Schwemmufervegetation alpiner Wildbäche)","6.6.2":"Bilberry spruce forest (Heidelbeer-Fichtenwald)","2.4":"Raised bogs (Hochmoore)","1.2.2":"Grayling zone, hyporhithron (Äschenregion (Hyporhithron))","6.0.1":"Broadleaf plantation (Aufforstung mit Laubgehölzen)","6.2":"Beech forests (Buchenwälder)","3.1.1":"Glacier (Gletscher)","4.3.7":"Curved-sedge grassland (Krummseggenrasen)","3.3.1.5":"Dry, warm limestone scree vegetation (Trockenwarme Kalkschuttflur)","7.1.2":"Dry trampled vegetation (Trockene Trittflur)","3.1.2":"Rock glacier (Blockgletscher)","1.3.3":"Base-poor spring vegetation (Kalkarme Quellflur)","4.0.3":"Re-greening at low altitude, road verges, etc. (Begrünung in Tieflagen (Strassenböchungen, etc.))","5.1.5":"Nutrient-rich herbaceous fringe (Nährstoffreicher Krautsaum)","1.1.2":"Pondweed communities (Laichkrautgesellschaften)","2.1.1":"Bog-pool community (Moortümpelgesellschaft)","3.2.2":"Moraine (Moräne)","9.2.1.2":"Alpine hut, chalet (Sennhütte, Chalet)","3.4.1.3":"Shaded limestone rock vegetation (Schattige Kalkfelsflur)","5.2.4":"Montane tall-herb stand (Hochstaudenflur des Gebirges)","1.1.3.1":"Frogbit communities (Froschbissgesellschaften)","4.3.6.3":"Golden-fescue grassland (Goldschwingelrasen)","9.4":"Sealed sports grounds, car parks, etc. (Versiegeleter Sportplatz, Parkplatz etc.)","3.3.1.1":"Limestone scree without vascular plants (Kalkschutthalde ohne Gefässpflanzen)","5.4.1.2":"Sub-Atlantic heath not on peat (Subatlantsiche Heide, nicht auf Torf)","8.2.1":"Cereal field, mainly winter crops (Getreidefeld (vorwiegend Winterkultur))","5.3.5":"Shrub-rich pre-forest stage (Gebüschreiche Vorwaldgesellschaften)","5.3.9":"Green alder scrub (Grünerlengebüsche)","6.3.8":"Broadleaf forest with evergreen shrubs (Laubwald mit immergrünen Sträuchern)","6.5.3":"Bog spruce forest (Hochmoor-Fichtenwald)","9.3.2":"Asphalt and concrete road (Asphalt- und Betonstrasse)","3.4.2.1":"Siliceous rock without vascular plants (Silikatfels ohne Gefässpflanzen)","7.1.7":"Alpine livestock resting area, alpine dock (Alpine Lägerflur (Alpenblackenflur))","2.0":"Artificial banks (Künstliche Ufer)","5.3.4":"Bramble thicket (Brombeergestrüpp)","2.0.0":"Artificial banks without vegetation (Künstliche Ufer ohne Vegetation)","9.3.2.1":"Road (Strasse)","5.4.3":"Subalpine calcareous heath, heather (Subalpine Kalkheide (Erikaheide))","6000.0":"Single tree, non-complex structure (Einzelbaum, nicht-komplexe Struktur)","5.4.6":"Alpine wind heath (Alpine Windheide)","2":"Banks, shores and wetlands (Ufer und der Feuchtgebiete)","9.2.2.4":"Greenhouse (Treibhaus)","1.2.4":"Upper trout zone, epirhithron (Obere Forellenregion (Epirhithron))","7.1.1":"Moist trampled vegetation (Feuchte Trittflur)","3.3.1":"Limestone scree (Kalkschutt)","5.1.4":"Moist herbaceous fringe, higher altitudes (Feuchter Krautsaum (höheren Lagen))","6.0.0":"Single trees and plantations (Einzelbäume und Forstpflanzungen)","9.3.3.1":"Dirt track (Naturweg (Dreckweg))","1.4.3":"Cave stream (Höhlenbach)","2.1.2.1":"Still-water reed bed (Stillwasser-Röhricht)","2.2.3":"Base-rich small-sedge fen, Davall-sedge fen (Kalkreiches Kleinseggenried (Davallseggenried))","3.5":"Caves (Höhlen)","8.2.3.2":"Base-rich loamy root-crop field (Kalkreicher, lehmiger Hackfruchtacker)","9.3.2.2":"Motorway (Autobahn)","4.2.2":"Central European dry grassland (Mitteleuropäischer Trockenrasen)"}},"meta":{"dataset":"HabitatMap_v1_2_20251211","res":2.0,"tile_m":2000,"dtype":"uint8","codes":["nodata","1.1","1.1.x","STR1112","1.2","STR1205","2","2.1","2.1.2.1","2.1.2.2","2.2.1","2.2.2","2.2.3","2.3.1","2.3.2","2.4","2.4.1","3","3.1","3.2.1","3.2.2","3.3","3.4","4","4.0","4.0.0.0.1","4.0.0.0.2","4.0.0.0.3","4.0.1","4.0.2","4.0.3","4.1","4.2.1","4.2.4","4.3.1","4.3.2","4.3.3","4.3.5","4.3.6","4.3.7","4.4","4.5.1","4.5.2","4.5.3","4.5.4","4.6","5","5.2","5.3","5.3.9","5.4","5.4.2","6","6.0","6.1","6.1.2","6.1.4","6.2","6.2.1","6.2.2","6.2.3","6.2.4","6.2.5","6.3","6.3.1","6.3.2","6.3.3","6.3.4","6.3.5","6.3.6","6.3.7","6.3.8","6.3.9","6.4","6.4.1","6.4.2","6.4.3","6.5","6.5.1","6.5.2","6.5.3","6.6","6.6.1","6.6.2","6.6.3","6.6.4","7.1","8.1","8.1.2","8.1.4","8.1.5","8.1.6","8.1.7","8.2","8.2.3","9","9.0.1","9.0.2","9.1","9.2","9.2.2","STR9221","9.3","9.3.2","9.3.3","9.3.4","9.4"],"pixels":[528329958,352439156,384217,1704780,70930866,4354,8886076,536938,1454825,5601998,3680220,15102365,44950441,2900405,83195598,35357,2953502,14878775,215461884,27077497,23215575,831959132,280377823,58324085,44673888,15570022,28413519,37964039,281920374,849946,174644,101318795,15985636,115931795,171211344,102845344,236970254,412452480,105898750,219545811,924230,752254375,113426263,443209787,198278851,3429380,511,2383,32728245,91095795,114550035,381756,42165822,2574,606799,5832728,7977003,363269779,108964628,35438788,378827554,610274794,158215156,36794561,6732433,8251484,27617630,21809219,5178094,6102597,132921584,450197,14796168,23959340,1447852,36553941,8361388,4732682,1081468,11509,4719894,368150260,110331832,284056975,236888807,95220020,953449,21603334,574803,2,2893466,38082873,1001375,680223020,245664636,341661,474481,123738346,484335,127502899,1305805,457140,65238,148511269,81236806,10329825,1415598],"made":"2026-11-24 21:59"}};</script>
+<script>
+(function () {
+  "use strict";
+  // ================================================================ helpers
+  const $ = id => document.getElementById(id);
+  const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  // display: at most two decimals; tiny non-zero values as "<0.01" (downloads keep full precision)
+  const nf = (x, d = 2) => {
+    if (x == null || !isFinite(x)) return "–";
+    d = Math.min(d, 2);
+    if (d === 2 && x !== 0 && Math.abs(x) < 0.005) return x > 0 ? "<0.01" : ">−0.01";
+    return Number(x).toLocaleString("de-CH", { minimumFractionDigits: d, maximumFractionDigits: d });
+  };
+  const LV95 = D.lv95;
+  const toLV = proj4("EPSG:4326", LV95);
+  const REF = D.ref, COEF = REF.coef, MAP = REF.mapping, NAMES = REF.names || {};
+  const META = D.meta, RES = META.res, TILE = META.tile_m, NPX = Math.round(TILE / RES);
+  const YEAR = new Date().getFullYear();
+  const VARS = ["central", "conservative"];
+  let variant = "central";
+
+  function dotted(code) {
+    let s = String(code).trim();
+    if (/^STR/i.test(s) || /^\d+$/.test(s)) s = s.replace(/\D/g, "").split("").join(".");
+    return s.replace(/(\.[xX])+$/, "");
+  }
+  function matchRow(code) {
+    const parts = dotted(code).split(".");
+    let best = null;
+    for (const row of MAP) {
+      const rp = row.t.split(".");
+      if (rp.every((v, i) => parts[i] === v) && (!best || rp.length > best.t.split(".").length)) best = row;
+    }
+    return best;
+  }
+  function hname(code) {
+    const d = dotted(code);
+    if (NAMES[d]) return NAMES[d];
+    const row = matchRow(d);
+    if (row && row.t === d) return row.name;
+    return row ? row.name : `TypoCH ${d}`;
+  }
+
+  // ================================================================ reading files
+  function coords(text) {
+    const out = [];
+    for (const tok of (text || "").trim().split(/\s+/)) {
+      const v = tok.split(",");
+      if (v.length >= 2 && v[0] !== "") out.push([parseFloat(v[0]), parseFloat(v[1])]);
+    }
+    return out;
+  }
+  function readKML(text) {
+    const doc = new DOMParser().parseFromString(text, "application/xml");
+    if (doc.getElementsByTagName("parsererror").length) throw new Error("The KML file could not be read.");
+    const feats = [];
+    for (const pm of doc.getElementsByTagNameNS("*", "Placemark")) {
+      const nameEl = pm.getElementsByTagNameNS("*", "name")[0];
+      const props = {};
+      for (const d of pm.getElementsByTagNameNS("*", "Data")) {
+        const v = d.getElementsByTagNameNS("*", "value")[0];
+        props[d.getAttribute("name") || ""] = v ? v.textContent.trim() : "";
+      }
+      for (const d of pm.getElementsByTagNameNS("*", "SimpleData")) props[d.getAttribute("name") || ""] = d.textContent.trim();
+      const polys = [];
+      for (const pg of pm.getElementsByTagNameNS("*", "Polygon")) {
+        const rings = [];
+        for (const b of pg.children) {
+          const ln = b.localName;
+          if (ln !== "outerBoundaryIs" && ln !== "innerBoundaryIs") continue;
+          for (const c of b.getElementsByTagNameNS("*", "coordinates")) {
+            const r = coords(c.textContent);
+            if (r.length >= 3) ln === "outerBoundaryIs" ? rings.unshift(r) : rings.push(r);
+          }
+        }
+        if (rings.length) polys.push(rings);
+      }
+      if (polys.length) feats.push({ name: nameEl ? nameEl.textContent.trim() : "", props, polysWgs: polys });
+    }
+    return feats;
+  }
+  function readGeoJSON(text) {
+    const gj = JSON.parse(text);
+    const items = gj.type === "FeatureCollection" ? gj.features : [gj];
+    const feats = [];
+    items.forEach((f, i) => {
+      const g = f.geometry || {}, props = {};
+      for (const [k, v] of Object.entries(f.properties || {})) props[k] = v == null ? "" : String(v);
+      let polys = [];
+      if (g.type === "Polygon") polys = [g.coordinates.map(r => r.map(p => [p[0], p[1]]))];
+      if (g.type === "MultiPolygon") polys = g.coordinates.map(pl => pl.map(r => r.map(p => [p[0], p[1]])));
+      if (polys.length) feats.push({ name: props.name || props.Name || props.NAME || `Polygon ${i + 1}`, props, polysWgs: polys });
+    });
+    return feats;
+  }
+  async function unzipKML(buf) {
+    // minimal ZIP reader: central directory, then the first .kml entry (stored or deflated)
+    const dv = new DataView(buf), u8 = new Uint8Array(buf);
+    let eocd = -1;
+    for (let i = buf.byteLength - 22; i >= Math.max(0, buf.byteLength - 66000); i--) if (dv.getUint32(i, true) === 0x06054b50) { eocd = i; break; }
+    if (eocd < 0) throw new Error("The KMZ file could not be read.");
+    let p = dv.getUint32(eocd + 16, true);
+    const n = dv.getUint16(eocd + 10, true);
+    for (let k = 0; k < n; k++) {
+      const method = dv.getUint16(p + 10, true), csize = dv.getUint32(p + 20, true);
+      const fl = dv.getUint16(p + 28, true), xl = dv.getUint16(p + 30, true), cl = dv.getUint16(p + 32, true);
+      const off = dv.getUint32(p + 42, true);
+      const name = new TextDecoder().decode(u8.subarray(p + 46, p + 46 + fl));
+      p += 46 + fl + xl + cl;
+      if (!/\.kml$/i.test(name)) continue;
+      const lfl = dv.getUint16(off + 26, true), lxl = dv.getUint16(off + 28, true);
+      const data = u8.subarray(off + 30 + lfl + lxl, off + 30 + lfl + lxl + csize);
+      if (method === 0) return new TextDecoder().decode(data);
+      const out = await new Response(new Blob([data]).stream().pipeThrough(new DecompressionStream("deflate-raw"))).arrayBuffer();
+      return new TextDecoder().decode(out);
+    }
+    throw new Error("No KML inside the KMZ file.");
+  }
+  function readCSV(text) {
+    const lines = text.replace(/\r/g, "").split("\n").filter(Boolean);
+    const sep = (lines[0].match(/;/g) || []).length > (lines[0].match(/,/g) || []).length ? ";" : ",";
+    const head = lines[0].split(sep).map(s => s.trim().replace(/^"|"$/g, ""));
+    return lines.slice(1).map(l => { const v = l.split(sep).map(s => s.trim().replace(/^"|"$/g, "")); const o = {}; head.forEach((h, i) => o[h] = v[i] ?? ""); return o; });
+  }
+  async function readFiles(files) {
+    let feats = [];
+    const csvs = [];
+    for (const f of files) {
+      const ext = f.name.split(".").pop().toLowerCase();
+      if (ext === "kml") feats = feats.concat(readKML(await f.text()));
+      else if (ext === "kmz") feats = feats.concat(readKML(await unzipKML(await f.arrayBuffer())));
+      else if (ext === "geojson" || ext === "json") feats = feats.concat(readGeoJSON(await f.text()));
+      else if (ext === "csv") csvs.push(...readCSV(await f.text()));
+      else throw new Error(`${f.name}: only KML, KMZ, GeoJSON (plus an optional CSV)`);
+    }
+    const byName = Object.fromEntries(csvs.map(r => [String(r.name || "").trim(), r]));
+    feats.forEach((f, i) => {
+      f.name = f.name || `Polygon ${i + 1}`;
+      for (const [k, v] of Object.entries(byName[f.name] || {})) if (k !== "name" && v) f.props[k] = v;
+      f.polys = f.polysWgs.map(poly => poly.map(ring => ring.map(([lon, lat]) => toLV.forward([lon, lat]))));
+    });
+    return feats;
+  }
+
+  // ================================================================ geometry
+  const ringArea = r => { let s = 0; for (let i = 0; i < r.length; i++) { const j = (i + 1) % r.length; s += r[i][0] * r[j][1] - r[i][1] * r[j][0]; } return Math.abs(s) / 2; };
+  const geomArea = polys => polys.reduce((a, p) => a + ringArea(p[0]) - p.slice(1).reduce((b, h) => b + ringArea(h), 0), 0);
+  async function geomHash(polys) {
+    const s = polys.map(p => p.map(r => r.map(([x, y]) => `${x.toFixed(2)} ${y.toFixed(2)}`).join(",")).join("|")).join(";");
+    const h = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s));
+    return [...new Uint8Array(h)].map(b => b.toString(16).padStart(2, "0")).join("");
+  }
+
+  // ================================================================ tiles
+  const tileCache = new Map();
+  function tile(te, tn) {
+    const k = te + "_" + tn;
+    if (!tileCache.has(k)) {
+      tileCache.set(k, fetch(`tiles/${te / 1000}/${tn / 1000}.bin`).then(async r => {
+        if (!r.ok) return null;
+        const buf = await new Response(r.body.pipeThrough(new DecompressionStream("deflate"))).arrayBuffer();
+        return META.dtype === "uint16" ? new Uint16Array(buf) : new Uint8Array(buf);
+      }).catch(() => null));
+    }
+    return tileCache.get(k);
+  }
+
+  // Pixel-centre rule, even-odd over all rings. Same arithmetic as pixel_counts() in gbs_core.py.
+  async function countPixels(polys) {
+    const E = [];
+    for (const p of polys) for (const r of p) for (let i = 0; i < r.length; i++) {
+      const a = r[i], b = r[(i + 1) % r.length];
+      if (a[1] !== b[1]) E.push([a[0], a[1], b[0], b[1]]);
+    }
+    let xmin = Infinity, ymin = Infinity, xmax = -Infinity, ymax = -Infinity;
+    for (const e of E) { xmin = Math.min(xmin, e[0], e[2]); xmax = Math.max(xmax, e[0], e[2]); ymin = Math.min(ymin, e[1], e[3]); ymax = Math.max(ymax, e[1], e[3]); }
+    const tiles = [];
+    for (let te = Math.floor(xmin / TILE) * TILE; te <= Math.floor(xmax / TILE) * TILE; te += TILE)
+      for (let tn = Math.floor(ymin / TILE) * TILE; tn <= Math.floor(ymax / TILE) * TILE; tn += TILE) tiles.push([te, tn]);
+    const arrs = await Promise.all(tiles.map(([te, tn]) => tile(te, tn)));
+    const counts = new Map(), runs = [];
+    tiles.forEach(([te, tn], ti) => {
+      const arr = arrs[ti], top = tn + TILE;
+      const r0 = Math.max(0, Math.ceil((top - ymax) / RES - 0.5)), r1 = Math.min(NPX - 1, Math.floor((top - ymin) / RES - 0.5));
+      for (let row = r0; row <= r1; row++) {
+        const yc = top - (row + 0.5) * RES;
+        const xs = [];
+        for (const e of E) if ((e[1] <= yc && yc < e[3]) || (e[3] <= yc && yc < e[1])) xs.push(e[0] + (yc - e[1]) * (e[2] - e[0]) / (e[3] - e[1]));
+        if (!xs.length) continue;
+        xs.sort((a, b) => a - b);
+        for (let k = 0; k + 1 < xs.length; k += 2) {
+          const c0 = Math.max(0, Math.ceil((xs[k] - te) / RES - 0.5)), c1 = Math.min(NPX - 1, Math.ceil((xs[k + 1] - te) / RES - 0.5) - 1);
+          if (c1 < c0) continue;
+          if (!arr) { counts.set(0, (counts.get(0) || 0) + c1 - c0 + 1); runs.push([te, top, row, c0, c1, null]); continue; }
+          const base = row * NPX;
+          for (let c = c0; c <= c1; c++) { const v = arr[base + c]; counts.set(v, (counts.get(v) || 0) + 1); }
+          runs.push([te, top, row, c0, c1, arr.subarray(base + c0, base + c1 + 1)]);
+        }
+      }
+    });
+    return { counts, runs };
+  }
+
+  // ================================================================ MSA (mirror of gbs_core.assess)
+  function ruleTarget(code, rules) {
+    const parts = code.split(".");
+    for (const r of rules) { if (r.from === "*" || r.from.split(".").every((v, i) => parts[i] === v)) return r.to; }
+    return null;
+  }
+  function assess(f) {
+    const A = f.area, counts = f.counts;
+    let nAll = 0; for (const n of counts.values()) nAll += n;
+    const scale = nAll ? A / (nAll * RES * RES) : 0;
+    const rules = f.rules.filter(r => r.to);
+    const pieces = []; let water = 0, nodata = 0;
+    for (const [idx, n] of [...counts.entries()].sort((a, b) => a[0] - b[0])) {
+      const ha = n * RES * RES * scale / 1e4;
+      if (idx === 0) { nodata += ha; continue; }
+      const code = dotted(META.codes[idx]), row = matchRow(code);
+      const p = { typoch: code, name: hname(code), pixels: n, area_ha: ha, row: row.t, terrestrial: row.terr };
+      if (!row.terr) water += ha;
+      for (const [v, key] of [["central", "c"], ["conservative", "k"]]) { const g = COEF[row[key]]; p[v] = { globio: row[key], globio_name: g.name, wb: g.wb, pl: g.pl, msa: g.msa }; }
+      const tgt = rules.length ? ruleTarget(code, rules) : null;
+      if (tgt && row.terr) {
+        const trow = matchRow(tgt);
+        p.target = { typoch: tgt, name: hname(tgt), row: trow.t };
+        for (const [v, key] of [["central", "c"], ["conservative", "k"]]) { const g = COEF[trow[key]]; p.target[v] = { globio: trow[key], msa: g.msa, wb: g.wb, pl: g.pl }; }
+      }
+      pieces.push(p);
+    }
+    const terr = pieces.filter(p => p.terrestrial), T = terr.reduce((a, p) => a + p.area_ha, 0);
+    const out = { name: f.name, area_ha: A / 1e4, terrestrial_ha: T, water_ha: water, nodata_ha: nodata, pixels: nAll,
+      pixel_area_m2: RES * RES, scale, geom_sha256: f.hash, pieces, rules: rules.map(r => ({ from: r.from, to: r.to })), target_year: f.year || "" };
+    for (const v of VARS) {
+      const fp = terr.reduce((a, p) => a + p.area_ha * (1 - p[v].msa), 0), ok = terr.reduce((a, p) => a + p.area_ha * p[v].msa, 0);
+      const r = { msa: T ? ok / T : null, msa_wb: T ? terr.reduce((a, p) => a + p.area_ha * p[v].wb, 0) / T : null,
+        msa_pl: T ? terr.reduce((a, p) => a + p.area_ha * p[v].pl, 0) / T : null, footprint_msa_ha: fp, intact_msa_ha: ok };
+      if (rules.length) {
+        const gain = terr.reduce((a, p) => a + p.area_ha * ((p.target ? p.target[v].msa : p[v].msa) - p[v].msa), 0);
+        const y = parseInt(f.year, 10), years = isFinite(y) ? (y > 1900 ? y - YEAR : y) : null;
+        Object.assign(r, { gain_msa_ha: gain, msa_target: T ? (ok + gain) / T : null, years, gain_msa_ha_per_year: years && years > 0 ? gain / years : null });
+      }
+      out[v] = r;
+    }
+    return out;
+  }
+
+  // ================================================================ map
+  const map = L.map("map", { zoomSnap: 0.25, zoomDelta: 0.5, attributionControl: false, zoomControl: false, minZoom: 7, maxZoom: 20, preferCanvas: true })
+    .setView([46.8, 8.2], 8);
+  L.control.zoom({ position: "topright" }).addTo(map);
+  L.control.scale({ imperial: false, position: "bottomleft" }).addTo(map);
+  const wmts = id => `https://wmts.geo.admin.ch/1.0.0/${id}/default/current/3857/{z}/{x}/{y}.jpeg`;
+  const grey = L.tileLayer(wmts("ch.swisstopo.pixelkarte-grau"), { maxZoom: 20, maxNativeZoom: 18 }).addTo(map);
+  const img = L.tileLayer(wmts("ch.swisstopo.swissimage"), { maxZoom: 20, maxNativeZoom: 19 });
+  const hab = L.tileLayer.wms("https://wms.geo.admin.ch/", { layers: "ch.bafu.lebensraumkarte-schweiz", format: "image/png", transparent: true, opacity: 0.75, maxZoom: 20 });
+  const polyLayer = L.featureGroup().addTo(map);
+  const msaLayer = L.featureGroup().addTo(map);
+  const canvas = L.canvas({ padding: 0.3 });
+  $("lay-img").onchange = e => e.target.checked ? (img.addTo(map), grey.remove()) : (grey.addTo(map), img.remove());
+  $("lay-hab").onchange = e => { e.target.checked ? hab.addTo(map) : hab.remove(); show($("hab-legend"), e.target.checked); renderHabLegend(); };
+  $("lay-msa").onchange = e => e.target.checked ? msaLayer.addTo(map) : msaLayer.remove();
+  map.on("mousemove", e => {
+    const [E, N] = toLV.forward([e.latlng.lng, e.latlng.lat]);
+    $("readout").textContent = `LV95 ${Math.round(E).toLocaleString("de-CH")} / ${Math.round(N).toLocaleString("de-CH")}`;
+  });
+  const BINS = [[0, 0.2, "--m0"], [0.2, 0.4, "--m1"], [0.4, 0.6, "--m2"], [0.6, 0.8, "--m3"], [0.8, 1.0001, "--m4"]];
+  const cssv = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  $("msa-legend").innerHTML = BINS.map(([a, b, c]) => `<span style="--c:var(${c})"><i></i>${nf(a, 1)}–${nf(Math.min(b, 1), 1)}</span>`).join("") +
+    `<span style="--c:var(--water)"><i></i>water</span><span style="--c:var(--nodata)"><i></i>no data</span>`;
+  // Habitat Map legend: official FOEN/WSL group colours (symbology v1.2), groups in the loaded parcels first
+  const HLEG = D.hab_legend || [];
+  const legIdx = new Map();
+  HLEG.forEach((g, i) => g[2].forEach(v => legIdx.set(String(v).toLowerCase(), i)));
+  const legGroup = code => {
+    let c = String(code).toLowerCase();
+    while (c) { if (legIdx.has(c)) return legIdx.get(c); const j = c.lastIndexOf("."); if (j < 0) break; c = c.slice(0, j); }
+    return -1;
+  };
+  function renderHabLegend() {
+    const el = $("hab-legend");
+    const link = `<a href="https://api3.geo.admin.ch/rest/services/api/MapServer/ch.bafu.lebensraumkarte-schweiz/legend?lang=en" target="_blank" rel="noopener">full legend on map.geo.admin.ch</a>`;
+    if (!HLEG.length) { el.innerHTML = `<span>${link}</span>`; return; }
+    const here = new Set();
+    for (const f of feats) if (f.res) for (const p of f.res.pieces) { const g = legGroup(p.typoch); if (g >= 0) here.add(g); }
+    const order = HLEG.map((_, i) => i).sort((a, b) => (here.has(b) - here.has(a)) || a - b);
+    el.innerHTML = (here.size ? `<span class="hd">In your parcels</span>` : "") +
+      order.map((i, k) => (here.size && k === here.size ? `<span class="hd">Other habitat groups</span>` : "") +
+        `<span style="--c:${HLEG[i][1]}"><i></i>${here.has(i) ? `<b>${esc(HLEG[i][0])}</b>` : esc(HLEG[i][0])}</span>`).join("") +
+      `<span class="src">Colours: FOEN/WSL symbology v1.2 · ${link}</span>`;
+  }
+  const colorCache = new Map();
+  const msaColor = (idx) => {
+    const key = variant + idx;
+    if (!colorCache.has(key)) colorCache.set(key, msaColorRaw(idx));
+    return colorCache.get(key);
+  };
+  const msaColorRaw = (idx) => {
+    if (!idx) return cssv("--nodata");
+    const row = matchRow(META.codes[idx]);
+    if (!row.terr) return cssv("--water");
+    const m = COEF[row[variant === "central" ? "c" : "k"]].msa;
+    return cssv(BINS.find(([a, b]) => m >= a && m < b)[2]);
+  };
+  function drawPixels(f) {
+    msaLayer.clearLayers();
+    if (!f || !f.runs) return;
+    if (f.pixels > 400000) { $("readout").textContent = "Parcel too large to draw every pixel - numbers are complete."; return; }
+    const inv = toLV.inverse, byColor = new Map();
+    for (const [te, top, row, c0, c1, vals] of f.runs) {
+      const y1 = top - row * RES, y0 = y1 - RES;
+      let s = c0;
+      for (let c = c0; c <= c1; c++) {
+        const v = vals ? vals[c - c0] : 0, nv = c < c1 ? (vals ? vals[c - c0 + 1] : 0) : -1;
+        if (c < c1 && msaColor(nv) === msaColor(v)) continue;
+        const x0 = te + s * RES, x1 = te + (c + 1) * RES;
+        const ring = [[x0, y0], [x1, y0], [x1, y1], [x0, y1]].map(p => { const [lon, lat] = inv(p); return [lat, lon]; });
+        const col = msaColor(v);
+        if (!byColor.has(col)) byColor.set(col, []);
+        byColor.get(col).push(ring);
+        s = c + 1;
+      }
+    }
+    for (const [col, rings] of byColor) L.polygon(rings, { renderer: canvas, stroke: false, fillColor: col, fillOpacity: 0.85, interactive: false }).addTo(msaLayer);
+    polyLayer.bringToFront();
+  }
+
+  // ================================================================ state + UI
+  let feats = [], sel = -1;
+  const show = (el, on) => { el.hidden = !on; };
+  const busy = t => { $("busy").textContent = t || ""; show($("busy"), !!t); };
+
+  const res0 = META.res;
+  $("res-txt").textContent = `${nf(res0, res0 % 1 ? 1 : 0)} m`;
+  $("eyebrow").textContent = `Switzerland · ${META.dataset.replace("HabitatMap_", "Habitat Map ").replace(/_/g, ".").replace(/\.(\d{8})$/, " ($1)")} · ${nf(res0, res0 % 1 ? 1 : 0)} m`;
+  $("repo").href = D.repo;
+
+  async function load(files) {
+    $("err").textContent = "";
+    try {
+      busy("Reading the file …");
+      const fs = await readFiles(files);
+      if (!fs.length) throw new Error("No polygons found in the file.");
+      busy(`Counting habitat pixels for ${fs.length} polygon${fs.length > 1 ? "s" : ""} …`);
+      for (const f of fs) {
+        f.area = geomArea(f.polys);
+        f.hash = await geomHash(f.polys);
+        const { counts, runs } = await countPixels(f.polys);
+        f.counts = counts; f.runs = runs; f.pixels = [...counts.values()].reduce((a, b) => a + b, 0);
+        const to = (f.props.target_habitat || f.props.target || "").trim();
+        const from = (f.props.target_from || "").split(/[;,]/).map(s => s.trim()).filter(Boolean);
+        f.rules = to ? (from.length ? from : ["*"]).map(x => ({ from: x === "*" ? "*" : dotted(x), to: dotted(to) })) : [];
+        f.year = f.props.target_year || f.props.years || "";
+        f.res = assess(f);
+      }
+      feats = fs;
+      $("loaded").textContent = `${feats.length} polygon${feats.length > 1 ? "s" : ""} loaded`;
+      drawPolys();
+      renderAll();
+      select(0, true);
+    } catch (e) {
+      console.error(e);
+      $("err").textContent = e.message || String(e);
+    } finally { busy(""); }
+  }
+
+  function drawPolys() {
+    polyLayer.clearLayers();
+    feats.forEach((f, i) => {
+      for (const poly of f.polysWgs) {
+        L.polygon(poly.map(r => r.map(([x, y]) => [y, x])), { color: cssv("--deep"), weight: 2, fill: true, fillOpacity: 0 })
+          .on("click", () => select(i)).addTo(polyLayer);
+      }
+    });
+    if (feats.length) map.fitBounds(polyLayer.getBounds(), { padding: [30, 30], maxZoom: 17 });
+  }
+
+  function renderAll() {
+    show($("sec-res"), feats.length > 0);
+    renderHabLegend();
+    const R = feats.map(f => f.res), v = variant;
+    const sum = k => R.reduce((a, r) => a + (r[v][k] || 0), 0);
+    const T = R.reduce((a, r) => a + r.terrestrial_ha, 0), A = R.reduce((a, r) => a + r.area_ha, 0);
+    const msa = T ? R.reduce((a, r) => a + (r[v].msa || 0) * r.terrestrial_ha, 0) / T : null;
+    const anyGain = R.some(r => r.rules.length);
+    const sumV = (vv, k) => R.reduce((a, r) => a + (r[vv][k] || 0), 0);
+    const msaV = vv => T ? R.reduce((a, r) => a + (r[vv].msa || 0) * r.terrestrial_ha, 0) / T : null;
+    const two = (fn, d, plus) => ["central", "conservative"].map(vv => { const x = fn(vv); return (plus && x >= 0 ? "+" : "") + nf(x, d); }).join(" / ");
+    $("stats").innerHTML = [
+      [nf(A, 2), "ha", `Area of ${feats.length} polygon${feats.length > 1 ? "s" : ""}`],
+      [two(msaV, 3), "", "MSA now, central / conservative"],
+      [two(vv => sumV(vv, "footprint_msa_ha"), 2), "MSA.ha", "Footprint, central / conservative"],
+      anyGain ? [two(vv => sumV(vv, "gain_msa_ha"), 2, true), "MSA.ha", "Gain of the measures, central / conservative"] : ["–", "", "Gain: add a measure below"],
+    ].map(([val, u, t], i) => `<div class="stat wide"><dt>${esc(t)}</dt><dd>${val}${u ? `<small>${u}</small>` : ""}</dd></div>`).join("");
+    $("polys").innerHTML = feats.map((f, i) => {
+      const r = f.res[v];
+      return `<li><button class="ps" type="button" data-i="${i}" aria-current="${i === sel}" style="--c:${cssv(BINS.find(([a, b]) => (r.msa ?? 0) >= a && (r.msa ?? 0) < b)[2])}">
+        <span class="bar"></span><span class="nm">${esc(f.name)}<span>${nf(f.res.area_ha, 2)} ha${f.res.nodata_ha > 0.005 ? ` · ${nf(f.res.nodata_ha, 2)} ha outside the map` : ""}</span></span>
+        <span class="num">MSA <b>${nf(f.res.central.msa, 3)} / ${nf(f.res.conservative.msa, 3)}</b><br>${nf(f.res.central.footprint_msa_ha, 2)} / ${nf(f.res.conservative.footprint_msa_ha, 2)} MSA.ha</span></button></li>`;
+    }).join("");
+    for (const b of $("polys").querySelectorAll(".ps")) b.onclick = () => select(+b.dataset.i);
+    if (sel >= 0) renderDetail();
+  }
+
+  function select(i, keepView) {
+    sel = i;
+    show($("sec-detail"), true);
+    renderAll();
+    drawPixels(feats[i]);
+    if (!keepView || feats.length === 1) {
+      const b = L.featureGroup(feats[i].polysWgs.map(p => L.polygon(p.map(r => r.map(([x, y]) => [y, x]))))).getBounds();
+      map.fitBounds(b, { padding: [40, 40], maxZoom: 18 });
+    }
+  }
+
+  const TARGETS = (() => {
+    // every terrestrial TypoCH code known to the tool: mapping rows, official names, codes in the map
+    const set = new Set(MAP.filter(m => m.terr).map(m => m.t));
+    for (const k of Object.keys(NAMES)) set.add(k);
+    for (const c of META.codes.slice(1)) set.add(dotted(c));
+    const key = s => s.split(".").map(x => x.padStart(4, "0")).join(".");
+    return [...set].filter(c => { const r = matchRow(c); return r && r.terr; }).sort((a, b) => key(a) < key(b) ? -1 : 1);
+  })();
+
+  function renderDetail() {
+    const f = feats[sel], r = f.res, v = variant, c = r[v];
+    const rows = [...r.pieces].sort((a, b) => b.area_ha - a.area_ha);
+    $("detail").innerHTML = `<p style="margin:0 0 6px;font-weight:640">${esc(f.name)}</p>
+      <table class="t"><thead><tr><th>Habitat (TypoCH)</th><th class="n">ha</th><th class="n">MSA</th><th class="n">Footprint (MSA.ha)</th></tr></thead><tbody>
+      ${rows.map(p => `<tr><td><span class="sw" style="--c:${p.terrestrial ? cssv(BINS.find(([a, b]) => p[v].msa >= a && p[v].msa < b)[2]) : cssv("--water")}"></span>${esc(p.name)} <span class="note">${esc(p.typoch)}</span></td>
+        <td class="n">${nf(p.area_ha, 3)}</td><td class="n">${p.terrestrial ? `${nf(p.central.msa, 2)}<span class="cv">${nf(p.conservative.msa, 2)}</span>` : "water"}</td><td class="n">${p.terrestrial ? `${nf(p.area_ha * (1 - p.central.msa), 3)}<span class="cv">${nf(p.area_ha * (1 - p.conservative.msa), 3)}</span>` : "–"}</td></tr>`).join("")}
+      ${r.nodata_ha > 0.0005 ? `<tr><td><span class="sw" style="--c:${cssv("--nodata")}"></span>Outside the Habitat Map</td><td class="n">${nf(r.nodata_ha, 3)}</td><td class="n">–</td><td class="n">–</td></tr>` : ""}
+      <tr class="sum"><td>Terrestrial total</td><td class="n">${nf(r.terrestrial_ha, 3)}</td><td class="n">${nf(r.central.msa, 3)}<span class="cv">${nf(r.conservative.msa, 3)}</span></td><td class="n">${nf(r.central.footprint_msa_ha, 3)}<span class="cv">${nf(r.conservative.footprint_msa_ha, 3)}</span></td></tr></tbody></table>
+      <p class="note" style="margin-top:4px">Per row: central on top, conservative below in grey.</p>
+      <p class="note" style="margin-top:6px">${["central", "conservative"].map(vv => { const x = r[vv]; return `${vv === "central" ? "Central" : "Conservative"}: birds &amp; mammals ${nf(x.msa_wb, 3)} · plants ${nf(x.msa_pl, 3)} · MSA = mean ${nf(x.msa, 3)}.`; }).join("<br>")}
+      ${r.rules.length ? ["central", "conservative"].map(vv => { const x = r[vv]; return `<br><b style="color:var(--ink)">Measure, ${vv}: MSA ${nf(x.msa, 3)} → ${nf(x.msa_target, 3)}, gain ${nf(x.gain_msa_ha, 3)} MSA.ha${x.gain_msa_ha_per_year != null ? `, ${nf(x.gain_msa_ha_per_year, 3)} per year over ${x.years} years` : ""}.</b>`; }).join("") : ""}</p>`;
+    const present = [...new Set(r.pieces.filter(p => p.terrestrial).map(p => p.typoch))];
+    const fromOpts = sel => `<option value="*"${sel === "*" ? " selected" : ""}>Whole parcel</option>` +
+      [...new Set([...present, ...present.map(p => p.split(".").slice(0, 2).join("."))])].sort().map(c => `<option value="${c}"${sel === c ? " selected" : ""}>${esc(c)} ${esc(hname(c))}</option>`).join("");
+    const toOpts = sel => `<option value="">– target habitat –</option>` + TARGETS.map(c => `<option value="${c}"${sel === c ? " selected" : ""}>${esc(c)} ${esc(hname(c))}</option>`).join("");
+    if (!f.rules.length) f.rules = [{ from: "*", to: "" }];
+    $("rules").innerHTML = f.rules.map((ru, i) => `<div class="rule" data-i="${i}"><select aria-label="From">${fromOpts(ru.from)}</select><span>→</span>
+      <select aria-label="To">${toOpts(ru.to)}</select><button class="btn" type="button" aria-label="Remove" title="Remove">×</button></div>`).join("");
+    $("tyear").value = f.year || "";
+    for (const el of $("rules").querySelectorAll(".rule")) {
+      const i = +el.dataset.i, [s1, s2] = el.querySelectorAll("select");
+      s1.onchange = () => { f.rules[i].from = s1.value; recompute(); };
+      s2.onchange = () => { f.rules[i].to = s2.value; recompute(); };
+      el.querySelector("button").onclick = () => { f.rules.splice(i, 1); recompute(); };
+    }
+  }
+  function recompute() { const f = feats[sel]; f.res = assess(f); renderAll(); }
+  $("add-rule").onclick = () => { feats[sel].rules.push({ from: "*", to: "" }); renderDetail(); };
+  $("tyear").onchange = e => { feats[sel].year = e.target.value; recompute(); };
+  for (const b of document.querySelectorAll(".seg button")) b.onclick = () => {
+    variant = b.dataset.v;
+    for (const x of document.querySelectorAll(".seg button")) x.setAttribute("aria-pressed", x === b);
+    renderAll(); drawPixels(feats[sel]);
+  };
+
+  // ================================================================ files in
+  const drop = $("drop");
+  $("file").onchange = e => e.target.files.length && load([...e.target.files]);
+  drop.addEventListener("dragover", e => { e.preventDefault(); drop.classList.add("over"); });
+  drop.addEventListener("dragleave", () => drop.classList.remove("over"));
+  drop.addEventListener("drop", e => { e.preventDefault(); drop.classList.remove("over"); load([...e.dataTransfer.files]); });
+  $("sample").onclick = async () => {
+    const t = D.sample_kml || await (await fetch(D.sample)).text();
+    load([new File([t], D.sample.split("/").pop(), { type: "application/vnd.google-earth.kml+xml" })]);
+  };
+  show($("sample"), !!D.sample);
+  if (location.protocol === "file:") $("fwarn").textContent = "Opened as a file: the habitat data cannot load here. Double-click start_local.bat in this folder, or use the GitHub page.";
+
+  // ================================================================ downloads
+  const download = (name, text, type) => {
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([text], { type })); a.download = name; a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  };
+  const stamp = () => new Date().toISOString().slice(2, 10).replace(/-/g, "");
+  const q = s => `"${String(s).replace(/"/g, '""')}"`;
+  const n4 = x => x == null ? "" : Number(x).toFixed(4);
+  $("btn-csv").onclick = () => {
+    const head = ["name", "area_ha", "terrestrial_ha", "water_ha", "nodata_ha", "msa_central", "msa_wb_central", "msa_plants_central",
+      "footprint_msa_ha_central", "msa_conservative", "footprint_msa_ha_conservative", "target", "target_year",
+      "gain_msa_ha_central", "gain_msa_ha_conservative", "gain_per_year_central", "geom_sha256"];
+    const lines = [head.join(",")];
+    for (const f of feats) { const r = f.res, c = r.central, k = r.conservative;
+      lines.push([q(r.name), n4(r.area_ha), n4(r.terrestrial_ha), n4(r.water_ha), n4(r.nodata_ha), n4(c.msa), n4(c.msa_wb), n4(c.msa_pl),
+        n4(c.footprint_msa_ha), n4(k.msa), n4(k.footprint_msa_ha), q(r.rules.map(x => `${x.from}>${x.to}`).join("; ")), q(r.target_year),
+        n4(c.gain_msa_ha), n4(k.gain_msa_ha), n4(c.gain_msa_ha_per_year), r.geom_sha256].join(",")); }
+    lines.push("", "polygon,typoch,habitat,mapping_row,area_ha,pixels,terrestrial,globio_central,msa_wb_central,msa_plants_central,msa_central,globio_conservative,msa_conservative,footprint_msa_ha_central,target_typoch,msa_target_central");
+    for (const f of feats) for (const p of f.res.pieces) { const c = p.central, k = p.conservative, t = p.target;
+      lines.push([q(f.name), p.typoch, q(p.name), p.row, p.area_ha.toFixed(5), p.pixels, +p.terrestrial, c.globio, c.wb ?? "", c.pl ?? "", n4(c.msa), k.globio, n4(k.msa),
+        p.terrestrial ? (p.area_ha * (1 - c.msa)).toFixed(5) : "", t ? t.typoch : "", t ? n4(t.central.msa) : ""].join(",")); }
+    download(`${stamp()}_msa_parcels.csv`, "﻿" + lines.join("\r\n"), "text/csv");
+  };
+  $("btn-json").onclick = () => download(`${stamp()}_msa_parcels.json`, JSON.stringify({
+    tool: D.version, label: D.label, made: new Date().toISOString(), habitat_map: META.dataset, res_m: RES, validation: D.validation,
+    results: feats.map(f => f.res) }, null, 1), "application/json");
+
+  // ================================================================ report
+  function tableHTML(head, rows, right = []) {
+    return `<table class="t"><thead><tr>${head.map((h, i) => `<th${right.includes(i) ? ' class="n"' : ""}>${h}</th>`).join("")}</tr></thead><tbody>${rows.map(r =>
+      `<tr${r.cls ? ` class="${r.cls}"` : ""}>${(r.cells || r).map((c, i) => `<td${right.includes(i) ? ' class="n"' : ""}>${c}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
+  }
+  function methodHTML() {
+    const V = D.validation;
+    const coefRows = Object.entries(COEF).map(([k, g]) => [esc(k), esc(g.name), g.wb == null ? "–" : nf(g.wb, 3), g.pl == null ? "–" : nf(g.pl, 3), g.msa == null ? "not terrestrial" : nf(g.msa, 4), esc(g.model), esc(g.src)]);
+    const mapRows = MAP.map(m => [esc(m.t), esc(m.name), m.terr ? `${esc(m.c)} · ${nf(COEF[m.c].msa, 3)}` : "water", m.terr ? `${esc(m.k)} · ${nf(COEF[m.k].msa, 3)}` : "–", esc(m.wc), esc(m.wk)]);
+    // national baseline from the tiles
+    let T = 0, sc = 0, sk = 0, W = 0;
+    META.codes.forEach((cd, i) => { if (!i) return; const km2 = META.pixels[i] * RES * RES / 1e6, row = matchRow(cd); if (!row.terr) { W += km2; return; } T += km2; sc += km2 * COEF[row.c].msa; sk += km2 * COEF[row.k].msa; });
+    return `<h2 id="method">Method</h2>
+      <p>The tool answers one question per polygon: how much of its original biodiversity, measured as mean species abundance (MSA), does the land use leave? MSA is 1 for an intact ecosystem and 0 when none of its original species remain. Results are labelled <b>${esc(D.label)}</b>. They follow the land-use module of GLOBIO4, the model behind the Global Biodiversity Score (GBS). They are not the official GBS of CDC Biodiversité, which uses an adapted GLOBIO 3.6.</p>
+      <h3>Steps</h3>
+      <ol><li>The polygon is read from the file (WGS84) and projected to Swiss LV95 (EPSG:2056) with proj4 (<code>${esc(LV95)}</code>). Areas are planar LV95 areas.</li>
+      <li>The Habitat Map of Switzerland (${esc(META.dataset)}, FOEN/WSL, ground cover layer) gives the TypoCH habitat type. It is stored as ${nf(RES, RES % 1 ? 1 : 0)} m pixels in ${TILE / 1000} km tiles. A pixel counts when its centre lies inside the polygon (even-odd rule, holes excluded).</li>
+      <li>Habitat shares come from the pixels. The area of each habitat is the exact polygon area times its share. Pixels outside the map count as "no data".</li>
+      <li>Each TypoCH code takes the GLOBIO class of the longest matching code in the mapping table (for example 4.5.1 uses the row 4.5).</li>
+      <li>The GLOBIO class gives the MSA of birds &amp; mammals and of plants. MSA overall is the mean of both, as in the GLOBIO4 code (CalcLanduseMSA: <code>(wbvert + plants) / 2</code>).</li>
+      <li>Open water (TypoCH 1, 1.1, 1.2) is reported but left out of the terrestrial MSA. GLOBIO treats freshwater in a separate module.</li></ol>
+      <h3>Formulas</h3>
+      <div class="f">MSA polygon      = Σ (area_i × MSA_i) / Σ area_i             (terrestrial habitats i)
+Footprint MSA.ha = Σ area_i × (1 − MSA_i)                       1 MSA.ha = 1 ha fully degraded
+Intact MSA.ha    = Σ area_i × MSA_i
+Gain MSA.ha      = Σ area_i × (MSA_i,target − MSA_i)            only habitats a measure changes
+Gain per year    = Gain / (target year − ${YEAR})                    linear path
+1 MSA.km² = 100 MSA.ha</div>
+      <h3>Two variants</h3>
+      <p><b>Central</b> uses the GLOBIO4 class that fits the plant community. <b>Conservative</b> is stricter where people manage the habitat: managed near-natural forest at 0.70 (GLOBIO 3.5, selective logging), sealed surfaces at 0.05 (GLOBIO 3.5, dense urban), mown semi-natural grassland and fens as extensive rangeland, arable land as intensive cropland. Both are always reported. A claim should hold under the conservative variant.</p>
+      <h3>Switzerland as a whole (all tiles of this tool)</h3>
+      <p>${nf(T, 0)} km² terrestrial, ${nf(W, 0)} km² open water. Area-weighted MSA: ${nf(T ? sc / T : null, 3)} central, ${nf(T ? sk / T : null, 3)} conservative. Use it as the national reference for a parcel.</p>
+      <h3>Validation</h3>
+      ${V ? `<p>Tiles versus an exact intersection with the original Habitat Map polygons (${esc(V.date)}, ${V.n} test parcels, script 3_gbs_check.py). Difference in MSA units:</p>
+      ${tableHTML(["Test parcels", "n", "Mean |difference|", "Largest |difference|"], Object.entries(V.by_kind).map(([k, x]) => [esc(k), x.n, nf(x.mean_abs, 4), nf(x.max_abs, 4)]), [1, 2, 3])}` : "<p>Run 3_gbs_check.py to add the validation.</p>"}
+      <h3>Not included</h3>
+      <ul><li>Road and rail disturbance, fragmentation of natural patches (GLOBIO infrastructure modules). Planned as phase 2.</li>
+      <li>Nitrogen deposition, climate change, hunting: constant or not relevant at parcel scale.</li>
+      <li>Single trees and shrubs outside forest (a separate layer of the Habitat Map).</li>
+      <li>Habitat quality within a type. MSA is modelled from the habitat type, not measured. Field monitoring proves the change.</li>
+      <li>MSA is relative to the natural reference state. It compares poorly across ecosystem types.</li></ul>
+      <h3>GLOBIO coefficients</h3>
+      ${tableHTML(["Class", "Name", "Birds & mammals", "Plants", "Overall", "Model", "Source"], coefRows, [2, 3, 4])}
+      <h3>Mapping TypoCH → GLOBIO</h3>
+      ${tableHTML(["TypoCH", "Habitat", "Central", "Conservative", "Why central", "Why conservative"], mapRows)}
+      <h3>Sources</h3>
+      <ul><li>PBL (2023): Technical documentation of the GLOBIOweb datasets, Table 3.1. <a href="https://www.globio.info/wp-content/uploads/2023/03/GlobioWeb_technical_documentation_20230219.pdf">globio.info</a></li>
+      <li>GLOBIO4 model code: <a href="https://github.com/GLOBIO4/GlobioModelPublic">github.com/GLOBIO4/GlobioModelPublic</a></li>
+      <li>Schipper A. M. et al. (2020): Projecting terrestrial biodiversity intactness with GLOBIO 4. Global Change Biology 26: 760–771. <a href="https://doi.org/10.1111/gcb.14848">doi:10.1111/gcb.14848</a></li>
+      <li>PBL (2016): The GLOBIO model. A technical description of version 3.5, Table 2.2. <a href="https://pbl.nl/downloads/pbl-publication-2369pdf">pbl.nl</a></li>
+      <li>Price B. et al. (2025): The Habitat Map of Switzerland v1_2 2025. EnviDat. <a href="https://www.doi.org/10.16904/envidat.723">doi:10.16904/envidat.723</a>. Source: FOEN/WSL.</li>
+      <li>Delarze R., Gonseth Y., Eggenberg S., Vust M. (2015): Lebensräume der Schweiz. 3rd edition, hep, Bern.</li>
+      <li>Code, tables, validation: <a href="${esc(D.repo)}">${esc(D.repo)}</a> · tool version ${esc(D.version)} · tiles made ${esc(META.made)}</li></ul>`;
+  }
+  function reportHTML(methodOnly) {
+    const now = new Date().toLocaleDateString("de-CH");
+    let h = `<h1>${methodOnly ? "Swiss Biodiversity Score Tool: method" : "Biodiversity score report (MSA)"}</h1>
+      <p class="meta">${esc(D.label)} · ${esc(META.dataset)} · ${nf(RES, RES % 1 ? 1 : 0)} m · NFA Foundation · ${now} · tool version ${esc(D.version)}</p>`;
+    if (!methodOnly) {
+      const R = feats.map(f => f.res);
+      h += `<h2>Summary</h2><p>MSA (mean species abundance) is 1 for an intact ecosystem and 0 for one without its original species. The footprint is the area-equivalent loss: 1 MSA.ha is one hectare fully degraded. Central uses the GLOBIO4 classes. Conservative uses a stricter class where people manage the habitat.</p>` +
+        tableHTML(["Polygon", "Area ha", "MSA central", "MSA cons.", "Footprint MSA.ha central", "Footprint MSA.ha cons.", "Gain MSA.ha central", "Gain MSA.ha cons."],
+          R.map(r => [esc(r.name), nf(r.area_ha, 2), nf(r.central.msa, 3), nf(r.conservative.msa, 3), nf(r.central.footprint_msa_ha, 2), nf(r.conservative.footprint_msa_ha, 2),
+            r.rules.length ? nf(r.central.gain_msa_ha, 2) : "–", r.rules.length ? nf(r.conservative.gain_msa_ha, 2) : "–"]).concat(R.length > 1 ? [{ cls: "sum", cells: ["Total",
+            nf(R.reduce((a, r) => a + r.area_ha, 0), 2), "", "", nf(R.reduce((a, r) => a + r.central.footprint_msa_ha, 0), 2), nf(R.reduce((a, r) => a + r.conservative.footprint_msa_ha, 0), 2),
+            nf(R.reduce((a, r) => a + (r.central.gain_msa_ha || 0), 0), 2), nf(R.reduce((a, r) => a + (r.conservative.gain_msa_ha || 0), 0), 2)] }] : []), [1, 2, 3, 4, 5, 6, 7]);
+      for (const r of R) {
+        const c = r.central, k = r.conservative;
+        h += `<section class="poly"><h2>${esc(r.name)}</h2>
+          <p>Area ${nf(r.area_ha, 3)} ha: terrestrial ${nf(r.terrestrial_ha, 3)} ha, open water ${nf(r.water_ha, 3)} ha, outside the Habitat Map ${nf(r.nodata_ha, 3)} ha.
+          ${r.pixels.toLocaleString("de-CH")} pixels of ${nf(r.pixel_area_m2, 0)} m² counted; area correction factor ${r.scale.toFixed(4)} (polygon area / pixel area).</p>
+          <p class="meta">Geometry SHA-256 (LV95, 1 cm): <code>${r.geom_sha256}</code></p>` +
+          tableHTML(["", "Central", "Conservative"], [
+            ["MSA birds & mammals", nf(c.msa_wb, 3), nf(k.msa_wb, 3)], ["MSA plants", nf(c.msa_pl, 3), nf(k.msa_pl, 3)],
+            ["MSA overall = mean of both", nf(c.msa, 3), nf(k.msa, 3)],
+            ["Footprint MSA.ha = Σ area × (1 − MSA)", nf(c.footprint_msa_ha, 3), nf(k.footprint_msa_ha, 3)],
+            ["Footprint MSA.km²", nf(c.footprint_msa_ha / 100, 5), nf(k.footprint_msa_ha / 100, 5)],
+            ["Intact-equivalent MSA.ha = Σ area × MSA", nf(c.intact_msa_ha, 3), nf(k.intact_msa_ha, 3)]].concat(r.rules.length ? [
+            ["MSA after the measure", nf(c.msa_target, 3), nf(k.msa_target, 3)],
+            ["Gain MSA.ha = Σ area × (MSA target − MSA now)", nf(c.gain_msa_ha, 3), nf(k.gain_msa_ha, 3)],
+            [`Gain per year${c.years ? ` (${c.years} years, linear)` : ""}`, nf(c.gain_msa_ha_per_year, 3), nf(k.gain_msa_ha_per_year, 3)]] : []), [1, 2]) +
+          (r.rules.length ? `<p><b>Measure:</b> ${r.rules.map(x => `${x.from === "*" ? "whole parcel" : "TypoCH " + esc(x.from) + " " + esc(hname(x.from))} → TypoCH ${esc(x.to)} ${esc(hname(x.to))}`).join("; ")}${r.target_year ? `, reached ${esc(r.target_year)}` : ""}.</p>` : "") +
+          `<h3>Every number behind the result</h3>` +
+          tableHTML(["TypoCH", "Habitat", "Mapping row", "Pixels", "ha", "GLOBIO central", "B&M", "Plants", "MSA", "Footprint (MSA.ha)", "Conservative", "MSA cons.", "Target"],
+            [...r.pieces].sort((a, b) => b.area_ha - a.area_ha).map(p => [esc(p.typoch), esc(p.name), esc(p.row), p.pixels.toLocaleString("de-CH"), nf(p.area_ha, 4),
+              p.terrestrial ? `${esc(p.central.globio)} ${esc(p.central.globio_name)}` : "open water", p.terrestrial ? nf(p.central.wb, 3) : "–", p.terrestrial ? nf(p.central.pl, 3) : "–",
+              p.terrestrial ? nf(p.central.msa, 4) : "–", p.terrestrial ? nf(p.area_ha * (1 - p.central.msa), 4) : "–", p.terrestrial ? esc(p.conservative.globio) : "–",
+              p.terrestrial ? nf(p.conservative.msa, 4) : "–", p.target ? `${esc(p.target.typoch)} · ${nf(p.target.central.msa, 3)}` : ""])
+              .concat([{ cls: "sum", cells: ["", "Terrestrial total", "", "", nf(r.terrestrial_ha, 4), "", nf(c.msa_wb, 3), nf(c.msa_pl, 3), nf(c.msa, 4), nf(c.footprint_msa_ha, 4), "", nf(k.msa, 4), ""] }]),
+            [3, 4, 6, 7, 8, 9, 11]) + `</section>`;
+      }
+    }
+    return h + methodHTML();
+  }
+  function openReport(methodOnly) {
+    $("doc").innerHTML = reportHTML(methodOnly);
+    $("report").classList.add("open");
+    $("report").scrollTop = 0;
+    if (methodOnly) $("method").scrollIntoView();
+  }
+  $("btn-report").onclick = () => openReport(false);
+  $("btn-method").onclick = () => openReport(true);
+  $("r-close").onclick = () => $("report").classList.remove("open");
+  $("r-print").onclick = () => window.print();
+  addEventListener("keydown", e => { if (e.key === "Escape") $("report").classList.remove("open"); });
+
+  // test hook: the validation script compares these numbers with the Python engine
+  window.GBS = { load, feats: () => feats, assess };
+})();
+</script>
+</body>
+</html>
